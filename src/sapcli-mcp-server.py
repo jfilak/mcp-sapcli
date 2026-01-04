@@ -101,12 +101,12 @@ class ADTConnectionConfig(NamedTuple):
 def _new_adt_connection(adt_conn_conf: ADTConnectionConfig) -> adt.Connection:
     return adt.Connection(
         adt_conn_conf.ASHost,
-        adt_conn_conf.HTTP_Port,
         adt_conn_conf.Client,
         adt_conn_conf.User,
         adt_conn_conf.Password,
-        adt_conn_conf.UseSSL,
-        adt_conn_conf.VerifySSL
+        port=adt_conn_conf.HTTP_Port,
+        ssl=adt_conn_conf.UseSSL,
+        verify=adt_conn_conf.VerifySSL
     )
 
 
@@ -139,7 +139,7 @@ def _run_sapcli_command(conn: ConnectionType, command: CommandType, args: Simple
         return OperationResult(
                 Success=False,
                 LogMessages=[str(ex), output_buffer.caperr],
-                Contents=""
+                Contents=output_buffer.capout
             )
 
     return OperationResult(

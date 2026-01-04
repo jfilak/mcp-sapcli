@@ -9,3 +9,6 @@ run_mypy:
 
 check: run_mypy run_pylint run_flake8
 	@echo Checked
+
+test:
+	pytest tests/
