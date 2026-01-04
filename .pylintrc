@@ -1,0 +1,8 @@
+[BASIC]
+good-names=i,j,k,ex,Run,_,__,sapcli-mcp-server
+
+[FORMAT]
+max-line-length=160
+
+[MESSAGE CONTROL]
+disable=too-many-arguments,too-many-positional-arguments

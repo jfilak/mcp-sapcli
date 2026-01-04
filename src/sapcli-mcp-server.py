@@ -1,10 +1,17 @@
+"""
+Export sapcli commands as MCP tools.
+"""
+
 from io import StringIO
-from typing import NamedTuple
+from typing import (
+    NamedTuple,
+    Union,
+    Callable
+)
 from types import SimpleNamespace
 
 from sap import (
     adt,
-    cli,
     errors,
 )
 
@@ -36,58 +43,213 @@ mcp = FastMCP(
 
 
 class OutputBuffer(sap.cli.core.PrintConsole):
+    """Capture output of sapcli commands in memory buffer.
+    """
+
     def __init__(self):
         self.std_output = StringIO()
         self.err_output = StringIO()
 
-        super(OutputBuffer, self).__init__(out_file=self.std_output, err_file=self.err_output)
+        super().__init__(out_file=self.std_output, err_file=self.err_output)
 
     @property
-    def capout(self):
+    def capout(self) -> str:
+        """Captured standard output
+        """
+
         return self.std_output.getvalue()
 
     @property
-    def caperr(self):
+    def caperr(self) -> str:
+        """Captured error output
+        """
+
         return self.err_output.getvalue()
 
-    def reset(self):
+    def reset(self) -> None:
+        """Reset captured contents
+        """
+
         self.std_output.truncate(0)
         self.std_output.seek(0)
-        self.err_output.truncate
+        self.err_output.truncate(0)
+        self.std_output.seek(0)
 
 
 class OperationResult(NamedTuple):
+    """MCP tool results
+    """
+
     Success: bool
     LogMessages: list[str]
     Contents: str
 
 
-@mcp.tool
-def ABAP_ADT_ConnectionTest(ashost: str, http_port: int, client: str, user: str, password: str, use_ssl: bool, verify_ssl: bool) -> OperationResult:
+class ADTConnectionConfig(NamedTuple):
+    """Crate for ADT connection configuration
+    """
+
+    ASHost: str
+    HTTP_Port: int
+    Client: str
+    User: str
+    Password: str
+    UseSSL: bool
+    VerifySSL: bool
+
+
+def _new_adt_connection(adt_conn_conf: ADTConnectionConfig) -> adt.Connection:
+    return adt.Connection(
+        adt_conn_conf.ASHost,
+        adt_conn_conf.HTTP_Port,
+        adt_conn_conf.Client,
+        adt_conn_conf.User,
+        adt_conn_conf.Password,
+        adt_conn_conf.UseSSL,
+        adt_conn_conf.VerifySSL
+    )
+
+
+ConnectionType = Union[adt.Connection]
+CommandType = Callable[[ConnectionType, SimpleNamespace], None]
+
+
+def _run_adt_command(adt_conn_conf: ADTConnectionConfig, command: CommandType, args: SimpleNamespace):
     try:
-        adt.Connection(ashost, client, user, password, http_port, ssl=use_ssl, verify=verify_ssl)
+        adt_conn = _new_adt_connection(adt_conn_conf)
     except errors.SAPCliError as ex:
-        return OperationResult(Success=False, LogMessages=[str(ex)])
+        return OperationResult(
+                Success=False,
+                LogMessages=['Could not connect to ADT Server', str(ex)],
+                Contents=""
+            )
 
-    return OperationResult(Success=True, LogMessages=['Connected successfully'], Contents="")
+    return _run_sapcli_command(adt_conn, command, args)
 
 
-@mcp.tool
-def ABAP_ADT_PackageGetDetails(ashost: str, http_port: int, client: str, user: str, password: str, use_ssl: bool, verify_ssl: bool, name: str) -> OperationResult:
+def _run_sapcli_command(conn: ConnectionType, command: CommandType, args: SimpleNamespace) -> OperationResult:
 
     output_buffer = OutputBuffer()
 
+    sap.cli.core.set_console(output_buffer)
+
     try:
-        adt_conn = adt.Connection(ashost, client, user, password, http_port, ssl=use_ssl, verify=verify_ssl)
-        sap.cli.core.set_console(output_buffer)
-        sap.cli.package.stat(adt_conn, SimpleNamespace(name=name))
+        command(conn, args)
     except errors.SAPCliError as ex:
-        return OperationResult(Success=False, LogMessages=[str(ex)]+output_buffer.caperr)
+        return OperationResult(
+                Success=False,
+                LogMessages=[str(ex), output_buffer.caperr],
+                Contents=""
+            )
 
-    return OperationResult(Success=True, LogMessages=[output_buffer.caperr], Contents=output_buffer.capout)
+    return OperationResult(
+            Success=True,
+            LogMessages=[output_buffer.caperr],
+            Contents=output_buffer.capout
+        )
 
+
+def _adt_connection_test(conn, _):
+    console = sap.cli.core.get_console()
+    conn.collection_types.items()
+    console.printout("ADT connection works!")
+
+
+@mcp.tool
+def abap_adt_connection_test(
+        ashost: str,
+        http_port: int,
+        client: str,
+        user: str,
+        password: str,
+        use_ssl: bool,
+        verify_ssl: bool) -> OperationResult:
+    """Test given ADT connection configuration by fetching ADT configuration
+       from the target ABAP sytem.
+    """
+
+    adt_conn_conf = ADTConnectionConfig(
+        ashost,
+        http_port,
+        client,
+        user,
+        password,
+        use_ssl,
+        verify_ssl
+    )
+
+    return _run_adt_command(
+        adt_conn_conf,
+        _adt_connection_test,
+        SimpleNamespace()
+    )
+
+
+@mcp.tool
+def abap_adt_package_get_details(
+        ashost: str,
+        http_port: int,
+        client: str,
+        user: str,
+        password: str,
+        use_ssl: bool,
+        verify_ssl: bool,
+        name: str) -> OperationResult:
+    """Return ABAP package details such as compoentn and activation status.
+    """
+
+    adt_conn_conf = ADTConnectionConfig(
+        ashost,
+        http_port,
+        client,
+        user,
+        password,
+        use_ssl,
+        verify_ssl
+    )
+
+    return _run_adt_command(
+        adt_conn_conf,
+        sap.cli.package.stat,
+        SimpleNamespace(
+            name=name
+        )
+    )
+
+
+@mcp.tool
+def abap_adt_package_list_objects(
+        ashost: str,
+        http_port: int,
+        client: str,
+        user: str,
+        password: str,
+        use_ssl: bool,
+        verify_ssl: bool,
+        name: str,
+        recursive: bool = False) -> OperationResult:
+    """List ABAP objects belonging the give ABAP development package hierarchy.
+    """
+
+    adt_conn_conf = ADTConnectionConfig(
+        ashost,
+        http_port,
+        client,
+        user,
+        password,
+        use_ssl,
+        verify_ssl
+    )
+
+    return _run_adt_command(
+        adt_conn_conf,
+        sap.cli.package.list_package,
+        SimpleNamespace(
+            name=name,
+            recursive=recursive
+        )
+    )
 
 
 if __name__ == "__main__":
-    #mcp.run()
     mcp.run(transport="http", host="127.0.0.1", port=8000)
