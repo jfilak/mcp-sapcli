@@ -5,8 +5,6 @@ Export sapcli commands as MCP tools.
 from io import StringIO
 from typing import (
     NamedTuple,
-    Union,
-    Callable
 )
 from types import SimpleNamespace
 
@@ -19,6 +17,13 @@ import sap.cli.core
 import sap.cli.package
 
 from fastmcp import FastMCP
+
+from sapclimcp.argparsertool import (
+    ConnectionType,
+    CommandType,
+    ArgParserTool,
+)
+
 
 mcp = FastMCP(
     name="sapcli",
@@ -108,10 +113,6 @@ def _new_adt_connection(adt_conn_conf: ADTConnectionConfig) -> adt.Connection:
         ssl=adt_conn_conf.UseSSL,
         verify=adt_conn_conf.VerifySSL
     )
-
-
-ConnectionType = Union[adt.Connection]
-CommandType = Callable[[ConnectionType, SimpleNamespace], None]
 
 
 def _run_adt_command(adt_conn_conf: ADTConnectionConfig, command: CommandType, args: SimpleNamespace):
@@ -252,4 +253,27 @@ def abap_adt_package_list_objects(
 
 
 if __name__ == "__main__":
+    args_tools = ArgParserTool("abap", None)
+    # Install ArgParser and build Tools definitions
+    for conn, cmd in sap.cli.get_commands():
+        cmd_tool = args_tools.add_parser(cmd.name)
+        cmd.install_parser(cmd_tool)
+
+    # TODO: add name transformations such as "abap_gcts_delete" to "abap_gcts_repo_delete"
+
+    for name, cmd in args_tools.tools.items():
+        if not cmd._parameters:
+            continue
+
+        print(name)
+        print('  parameters:')
+        for k, v in cmd._parameters.items():
+            print('   - ', k, v)
+
+        input_schema = cmd.to_mcp_input_schema()
+        print(json.dumps(input_schema))
+
+    for k, v in mcp._tool_manager._tools.items():
+        print(k, str(v))
+
     mcp.run(transport="http", host="127.0.0.1", port=8000)
