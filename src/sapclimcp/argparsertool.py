@@ -76,9 +76,10 @@ class ArgParserTool:
 
     """
 
-    def __init__(self, name, parent):
+    def __init__(self, name, parent, conn_factory=None):
         self.name = name
         self.cmdfn = None
+        self.conn_factory = conn_factory
         self.input_schema = ArgPaserToolInputSchema()
         self.tools = {}
 
@@ -129,11 +130,11 @@ class ArgParserTool:
     def add_parser(self, name):
         """Create new MCP tool from the parser.
 
-        The new parser inherits the parent's input schema properties.
+        The new parser inherits the parent's input schema properties and connection factory.
         """
 
         subtool_name = self.name + "_" + name
-        subtool = ArgParserTool(subtool_name, self)
+        subtool = ArgParserTool(subtool_name, self, conn_factory=self.conn_factory)
 
         # Inherit parent's properties
         for prop_name, prop_spec in self.input_schema.properties.items():

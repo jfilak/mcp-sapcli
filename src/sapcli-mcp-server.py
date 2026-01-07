@@ -5,6 +5,7 @@ Export sapcli commands as MCP tools.
 import json
 from io import StringIO
 from typing import (
+    Any,
     Callable,
     NamedTuple,
     Union,
@@ -21,6 +22,8 @@ import sap.cli.core
 import sap.cli.package
 
 from fastmcp import FastMCP
+from fastmcp.tools import Tool
+from fastmcp.tools.tool import ToolResult
 
 from sapclimcp.argparsertool import ArgParserTool
 
@@ -189,6 +192,115 @@ def _run_sapcli_command(conn: SAPConnectionType, command: CommandType, args: Sim
         )
 
 
+class SapcliCommandToolError(Exception):
+    """Error raised by SapcliCommandTool."""
+
+
+class SapcliCommandTool(Tool):
+    """MCP Tool for executing sapcli commands.
+
+    This tool wraps sapcli commands transformed from ArgParserTool
+    and executes them via the appropriate connection type.
+    Currently only ADT connections are supported.
+    """
+
+    cmdfn: CommandType
+    conn_factory: Callable
+
+    async def run(self, arguments: dict[str, Any]) -> ToolResult:
+        """Run the sapcli command with the given arguments.
+
+        Args:
+            arguments: Dictionary containing connection parameters and command arguments.
+
+        Returns:
+            ToolResult with the command output.
+
+        Raises:
+            SapcliCommandToolError: If cmdfn is None or connection type is not ADT.
+        """
+        if self.cmdfn is None:
+            raise SapcliCommandToolError(
+                f"Tool '{self.name}' has no command function (cmdfn is None)"
+            )
+
+        # Only ADT connections are supported
+        # pylint: disable-next=comparison-with-callable
+        if self.conn_factory != sap.cli.adt_connection_from_args:
+            raise SapcliCommandToolError(
+                f"Tool '{self.name}' uses unsupported connection type. "
+                "Only ADT connections are currently supported."
+            )
+
+        # Extract ADT connection configuration from arguments
+        adt_conn_conf = ADTConnectionConfig(
+            ASHost=arguments['ashost'],
+            HTTP_Port=arguments['http_port'],
+            Client=arguments['client'],
+            User=arguments['user'],
+            Password=arguments['password'],
+            UseSSL=arguments['use_ssl'],
+            VerifySSL=arguments['verify_ssl']
+        )
+
+        # Build command arguments (exclude connection parameters)
+        connection_params = {
+            'ashost', 'http_port', 'client', 'user', 'password',
+            'use_ssl', 'verify_ssl'
+        }
+        cmd_args = {k: v for k, v in arguments.items() if k not in connection_params}
+
+        result = _run_adt_command(adt_conn_conf, self.cmdfn, SimpleNamespace(**cmd_args))
+
+        return ToolResult(
+            structured_content={
+                'Success': result.Success,
+                'LogMessages': result.LogMessages,
+                'Contents': result.Contents
+            }
+        )
+
+    @classmethod
+    def from_argparser_tool(
+        cls,
+        cmd: ArgParserTool,
+        conn_factory: Callable,
+        description: str | None = None
+    ) -> 'SapcliCommandTool':
+        """Create a SapcliCommandTool from an ArgParserTool.
+
+        Args:
+            cmd: The ArgParserTool containing command definition.
+            conn_factory: The connection factory function for this command.
+            description: Optional description for the tool.
+
+        Returns:
+            A new SapcliCommandTool instance.
+
+        Raises:
+            SapcliCommandToolError: If cmd.cmdfn is None.
+        """
+        if cmd.cmdfn is None:
+            raise SapcliCommandToolError(
+                f"Cannot create tool from '{cmd.name}': cmdfn is None"
+            )
+
+        # Extract the execute function from cmdfn dict
+        execute_fn = cmd.cmdfn.get('execute')
+        if execute_fn is None:
+            raise SapcliCommandToolError(
+                f"Cannot create tool from '{cmd.name}': 'execute' not found in cmdfn"
+            )
+
+        return cls(
+            name=cmd.name,
+            description=description or f"Execute sapcli command: {cmd.name}",
+            parameters=cmd.to_mcp_input_schema(),
+            cmdfn=execute_fn,
+            conn_factory=conn_factory,
+        )
+
+
 def _adt_connection_test(conn, _):
     console = sap.cli.core.get_console()
     conn.collection_types.items()
@@ -291,7 +403,7 @@ def abap_adt_package_list_objects(
     )
 
 
-def _transform_sapcli_commands():
+def _transform_sapcli_commands(server: FastMCP):
     args_tools = ArgParserTool("abap", None)
 
     # Mapping from connection factory functions to their specific parameters
@@ -315,6 +427,9 @@ def _transform_sapcli_commands():
     for conn_factory, cmd in sap.cli.get_commands():
         cmd_tool = args_tools.add_parser(cmd.name)
 
+        # Set connection factory before install_parser so sub-parsers inherit it
+        cmd_tool.conn_factory = conn_factory
+
         # Add connection parameters before install_parser so sub-parsers inherit them
         cmd_tool.add_properties(COMMON_CONNECTION_PARAMS)
 
@@ -322,33 +437,35 @@ def _transform_sapcli_commands():
         if specific_params is not None:
             cmd_tool.add_properties(specific_params)
 
-        # Install parser after adding connection properties
+        # Install parser after adding connection properties and factory
         cmd.install_parser(cmd_tool)
 
     # pylint: disable-next=fixme
     # TODO: add name transformations such as "abap_gcts_delete" to "abap_gcts_repo_delete"
 
-    for tool_name, cmd in args_tools.tools.items():
+    for tool_name, cmd_tool in args_tools.tools.items():
         # pylint: disable=protected-access
-        if not cmd._parameters or tool_name not in ["abap_package_list", "abap_package_stat"]:
+        if not cmd_tool._parameters or tool_name not in ["abap_package_list", "abap_package_stat"]:
             continue
 
         print(tool_name)
-        input_schema = cmd.to_mcp_input_schema()
+        input_schema = cmd_tool.to_mcp_input_schema()
         print(json.dumps(input_schema))
+        server.add_tool(SapcliCommandTool.from_argparser_tool(cmd_tool, cmd_tool.conn_factory))
 
 
 if __name__ == "__main__":
     print("# Transformed ArgParser command tool properties")
-    _transform_sapcli_commands()
+    _transform_sapcli_commands(mcp)
 
     print("# FastMCP tool properties")
     # pylint: disable=protected-access
     for k, v in mcp._tool_manager._tools.items():
-        if k not in ["abap_adt_package_list_objects", "abap_adt_package_get_details"]:
-            continue
+        # if k not in ["abap_adt_package_list_objects", "abap_adt_package_get_details"]:
+        #    continue
 
         print(k)
         print(json.dumps(v.parameters))
+        print(json.dumps(v.output_schema))
 
-    # mcp.run(transport="http", host="127.0.0.1", port=8000)
+    mcp.run(transport="http", host="127.0.0.1", port=8000)
