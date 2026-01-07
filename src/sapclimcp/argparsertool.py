@@ -1,19 +1,20 @@
 import builtins
 
 from typing import (
+    Any,
     Union,
     Callable
 )
+
+from types import SimpleNamespace
 
 from sap import (
     adt,
     cli,
 )
 
-from fastcmp.tools import (
-    Tool,
-    ToolResult,
-)
+from fastmcp.tools import Tool
+from fastmcp.tools.tool import ToolResult
 
 
 ConnectionType = Union[adt.Connection]
@@ -132,7 +133,7 @@ class ArgParserTool:
             'type': 'object',
         }
 
-    def to_mcp_output_schema(serlf) -> dict[str, Any]:
+    def to_mcp_output_schema(self) -> dict[str, Any]:
         # TODO: return the default FastMCP output schema
         return {}
 
@@ -140,20 +141,20 @@ class ArgParserTool:
 class SapcliMCPTool(Tool):
     cmdfn: CommandType
 
-    async def run(self, arguments[str, Any]) -> ToolResult:
-        self.cmdfn(conn, SimpleNamepsace(arguments))
+    async def run(self, arguments: dict[str, Any]) -> ToolResult:
+        self.cmdfn(conn, SimpleNamespace(arguments))
         return ToolResult()
 
     @classmethod
     def from_sapcli_cmd(cls, cmd: ArgParserTool) -> Tool:
         # TODO
         return cls(
-            cmdfnd=cmd.cmdfn,
+            cmdfn=cmd.cmdfn,
             name=cmd.name,
             title=None,
             description=None,
             parameters=cmd.to_mcp_input_schema(),
-            ouptup_schema=cmd.to_mcp_output_schema(),
+            output_schema=cmd.to_mcp_output_schema(),
             annotations=None,
             tags=set(),
             serializer=None,

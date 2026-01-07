@@ -2,6 +2,7 @@
 Export sapcli commands as MCP tools.
 """
 
+import json
 from io import StringIO
 from typing import (
     NamedTuple,
@@ -255,17 +256,19 @@ def abap_adt_package_list_objects(
 if __name__ == "__main__":
     args_tools = ArgParserTool("abap", None)
     # Install ArgParser and build Tools definitions
-    for conn, cmd in sap.cli.get_commands():
+    for conn_type, cmd in sap.cli.get_commands():
         cmd_tool = args_tools.add_parser(cmd.name)
         cmd.install_parser(cmd_tool)
 
+    # pylint: disable-next=fixme
     # TODO: add name transformations such as "abap_gcts_delete" to "abap_gcts_repo_delete"
 
-    for name, cmd in args_tools.tools.items():
+    for tool_name, cmd in args_tools.tools.items():
+        # pylint: disable=protected-access
         if not cmd._parameters:
             continue
 
-        print(name)
+        print(tool_name)
         print('  parameters:')
         for k, v in cmd._parameters.items():
             print('   - ', k, v)
@@ -273,6 +276,7 @@ if __name__ == "__main__":
         input_schema = cmd.to_mcp_input_schema()
         print(json.dumps(input_schema))
 
+    # pylint: disable=protected-access
     for k, v in mcp._tool_manager._tools.items():
         print(k, str(v))
 

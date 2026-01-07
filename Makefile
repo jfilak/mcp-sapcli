@@ -11,4 +11,4 @@ check: run_mypy run_pylint run_flake8
 	@echo Checked
 
 test:
-	pytest tests/
+	PYTHONPATH=$$(pwd)/src:$$PYTHONPATH pytest tests/
