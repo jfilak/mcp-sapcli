@@ -76,6 +76,51 @@ class ArgPaserToolInputSchema:
     properties: dict[str, Any] = field(default_factory=dict)
     required: list[str] = field(default_factory=list)
 
+
+# Connection parameters for MCP tools
+# Common parameters required for all connection types
+COMMON_CONNECTION_PARAMS: dict[str, dict[str, str]] = {
+    'ashost': {'type': 'string'},
+    'client': {'type': 'string'},
+    'user': {'type': 'string'},
+    'password': {'type': 'string'},
+}
+
+# ADT connection specific parameters (sap.cli.adt_connection_from_args)
+ADT_CONNECTION_PARAMS: dict[str, dict[str, str]] = {
+    'http_port': {'type': 'integer'},
+    'use_ssl': {'type': 'boolean'},
+    'verify_ssl': {'type': 'boolean'},
+}
+
+# RFC connection specific parameters (sap.cli.rfc_connection_from_args)
+RFC_CONNECTION_PARAMS: dict[str, dict[str, str]] = {
+    'sysnr': {'type': 'string'},
+}
+
+# OData connection specific parameters (sap.cli.odata_connection_from_args)
+ODATA_CONNECTION_PARAMS: dict[str, dict[str, str]] = {
+    'http_port': {'type': 'integer'},
+    'use_ssl': {'type': 'boolean'},
+    'verify_ssl': {'type': 'boolean'},
+}
+
+# REST/gCTS connection specific parameters (sap.cli.gcts_connection_from_args)
+REST_CONNECTION_PARAMS: dict[str, dict[str, str]] = {
+    'http_port': {'type': 'integer'},
+    'use_ssl': {'type': 'boolean'},
+    'verify_ssl': {'type': 'boolean'},
+}
+
+# Mapping from connection factory functions to their specific parameters
+CONNECTION_TYPE_PARAMS: dict[Callable, dict[str, dict[str, str]]] = {
+    cli.adt_connection_from_args: ADT_CONNECTION_PARAMS,
+    cli.rfc_connection_from_args: RFC_CONNECTION_PARAMS,
+    cli.odata_connection_from_args: ODATA_CONNECTION_PARAMS,
+    cli.gcts_connection_from_args: REST_CONNECTION_PARAMS,
+}
+
+
 class ArgParserTool:
     """Monkey patching the standard python argparser.ArgParser to
        transform command line arguments into MCP tool name and input schema.
@@ -168,6 +213,29 @@ class ArgParserTool:
     def to_mcp_output_schema(self) -> dict[str, Any]:
         # TODO: return the default FastMCP output schema
         return {}
+
+    def add_connection_properties(self, conn_type: Callable) -> None:
+        """Add connection-specific input properties based on connection type.
+
+        The conn_type is a connection factory function returned by sap.cli.get_commands():
+        - ADT: sap.cli.adt_connection_from_args
+        - RFC: sap.cli.rfc_connection_from_args
+        - REST: sap.cli.gcts_connection_from_args
+        - OData: sap.cli.odata_connection_from_args
+
+        All connection types share common parameters (ashost, client, user, password)
+        and have their own specific parameters.
+        """
+        # Add common connection parameters
+        for param_name, param_spec in COMMON_CONNECTION_PARAMS.items():
+            self.input_schema.properties[param_name] = param_spec.copy()
+            self.input_schema.required.append(param_name)
+
+        # Add connection-type specific parameters
+        specific_params = CONNECTION_TYPE_PARAMS.get(conn_type, {})
+        for param_name, param_spec in specific_params.items():
+            self.input_schema.properties[param_name] = param_spec.copy()
+            self.input_schema.required.append(param_name)
 
 
 class SapcliMCPTool(Tool):
