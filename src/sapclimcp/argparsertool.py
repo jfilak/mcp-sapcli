@@ -1,5 +1,6 @@
 import builtins
 
+from dataclasses import dataclass, field
 from typing import (
     Any,
     Union,
@@ -70,40 +71,66 @@ def _argument_spec_to_json_spec(argparserArgument):
     return _add_default_if_specified(spec, default)
 
 
+@dataclass
+class ArgPaserToolInputSchema:
+    properties: dict[str, Any] = field(default_factory=dict)
+    required: list[str] = field(default_factory=list)
+
 class ArgParserTool:
+    """Monkey patching the standard python argparser.ArgParser to
+       transform command line arguments into MCP tool name and input schema.
+
+       MCP tools also need output schema but we do not deal with that in this
+       class as all commands will have a common schema because they all
+       print output to standard IO.
+
+       Every defined parser is supposed to be a new MCP tool.
+
+       The root ArgParser instance has all the MCP definitions stored
+       in the instance member tools.
+
+       The tools have the JSON input schema definition in the members:\
+
+    """
 
     def __init__(self, name, parent):
         self.name = name
         self.cmdfn = None
-        self.properties = {}
-        self.required = []
+        self.input_schema = ArgPaserToolInputSchema()
         self.tools = {}
 
         self._parent = parent
         self._parameters = {}
 
     def add_argument(self, *args, **kwargs):
+        """Convert command line argument to MCP Tool input property"""
+
+        # Property name - use this one if it is a possitional argument (no --)
         parameter = args[0]
 
         if parameter[0] == '-':
+            # We are dealing with non-positional argument and we have to use
+            # the long form which is prefixed with --
             if parameter[1] != '-':
                 parameter = args[1]
-                args = args[1:]
 
+            # MCP tool properties must not start with -
             parameter = parameter.lstrip('-')
 
+        # Save the original configuration for debugging purposes
         self._parameters[parameter] = kwargs
         try:
-            self.properties[parameter] = _argument_spec_to_json_spec(kwargs)
+            self.input_schema.properties[parameter] = _argument_spec_to_json_spec(kwargs)
         except ArgToToolConversionError as ex:
             raise ArgToToolConversionError(self.name + " " + parameter + ': ' + str(ex) + " " + str(kwargs))
 
         hasdefault = 'default' in kwargs
         # Required is either specified or True if the parameter does not have default
+        # I am not exactly sure it is the correct rule.
         required = kwargs.get('required', not hasdefault)
 
         if required:
-            self.required.append(parameter)
+            self.input_schema.required.append(parameter)
 
     def set_defaults(self, **kwargs):
         if len(kwargs.keys()) != 1 or 'execute' not in kwargs:
@@ -112,9 +139,14 @@ class ArgParserTool:
         self.cmdfn = kwargs
 
     def add_subparsers(self):
+        # I am not exactly sure what is the goal of "subparsers"
+        # because commands are defined by "add_parser".
         return self
 
     def add_parser(self, name):
+        """Create new MCP tool from the parser
+        """
+
         subtool_name = self.name + "_" + name
         subtool = ArgParserTool(subtool_name, self)
         self._add_subtool(subtool)
@@ -128,8 +160,8 @@ class ArgParserTool:
 
     def to_mcp_input_schema(self) -> dict[str, Any]:
         return {
-            'properties': self.properties,
-            'required': self.required,
+            'properties': self.input_schema.properties,
+            'required': self.input_schema.required,
             'type': 'object',
         }
 
