@@ -253,31 +253,46 @@ def abap_adt_package_list_objects(
     )
 
 
-if __name__ == "__main__":
+def _transform_sapcli_commands():
     args_tools = ArgParserTool("abap", None)
+
     # Install ArgParser and build Tools definitions
+    # The list items returned by sap.cli.get_commands() are tuples
+    # where:
+    # - the index 0 is a connection factory function
+    # - the index 1 is a sapcli command specification
+    # Hence the variable conn_type is a reference to one of the following functions:
+    # - ADT - sap.cli.adt_connection_from_args
+    # - RFC - sap.cli.rfc_connection_from_args
+    # - REST - sap.cli.gcts_connection_from_args
+    # - OData - sap.cli.odata_connection_from_args
     for conn_type, cmd in sap.cli.get_commands():
         cmd_tool = args_tools.add_parser(cmd.name)
         cmd.install_parser(cmd_tool)
+        cmd_tool.add_connection_properties(conn_type)
 
     # pylint: disable-next=fixme
     # TODO: add name transformations such as "abap_gcts_delete" to "abap_gcts_repo_delete"
 
     for tool_name, cmd in args_tools.tools.items():
         # pylint: disable=protected-access
-        if not cmd._parameters:
+        if not cmd._parameters or tool_name not in ["abap_package_list", "abap_package_stat"]:
             continue
 
         print(tool_name)
-        print('  parameters:')
-        for k, v in cmd._parameters.items():
-            print('   - ', k, v)
-
         input_schema = cmd.to_mcp_input_schema()
         print(json.dumps(input_schema))
 
+
+if __name__ == "__main__":
+    _transform_sapcli_commands()
+
     # pylint: disable=protected-access
     for k, v in mcp._tool_manager._tools.items():
-        print(k, str(v))
+        if k not in ["abap_adt_package_list_objects", "abap_adt_package_get_details"]:
+            continue
 
-    mcp.run(transport="http", host="127.0.0.1", port=8000)
+        print(k)
+        print(json.dumps(v.parameters))
+
+    # mcp.run(transport="http", host="127.0.0.1", port=8000)
