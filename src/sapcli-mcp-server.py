@@ -5,7 +5,9 @@ Export sapcli commands as MCP tools.
 import json
 from io import StringIO
 from typing import (
+    Callable,
     NamedTuple,
+    Union,
 )
 from types import SimpleNamespace
 
@@ -14,16 +16,52 @@ from sap import (
     errors,
 )
 
+import sap.cli
 import sap.cli.core
 import sap.cli.package
 
 from fastmcp import FastMCP
 
-from sapclimcp.argparsertool import (
-    ConnectionType,
-    CommandType,
-    ArgParserTool,
-)
+from sapclimcp.argparsertool import ArgParserTool
+
+# Type aliases for SAP connections and commands
+SAPConnectionType = Union[adt.Connection]
+CommandType = Callable[[SAPConnectionType, SimpleNamespace], None]
+
+# Connection parameters for MCP tools
+# Common parameters required for all connection types
+COMMON_CONNECTION_PARAMS: dict[str, dict[str, str]] = {
+    'ashost': {'type': 'string'},
+    'client': {'type': 'string'},
+    'user': {'type': 'string'},
+    'password': {'type': 'string'},
+}
+
+# ADT connection specific parameters
+ADT_CONNECTION_PARAMS: dict[str, dict[str, str]] = {
+    'http_port': {'type': 'integer'},
+    'use_ssl': {'type': 'boolean'},
+    'verify_ssl': {'type': 'boolean'},
+}
+
+# RFC connection specific parameters
+RFC_CONNECTION_PARAMS: dict[str, dict[str, str]] = {
+    'sysnr': {'type': 'string'},
+}
+
+# OData connection specific parameters
+ODATA_CONNECTION_PARAMS: dict[str, dict[str, str]] = {
+    'http_port': {'type': 'integer'},
+    'use_ssl': {'type': 'boolean'},
+    'verify_ssl': {'type': 'boolean'},
+}
+
+# REST/gCTS connection specific parameters
+REST_CONNECTION_PARAMS: dict[str, dict[str, str]] = {
+    'http_port': {'type': 'integer'},
+    'use_ssl': {'type': 'boolean'},
+    'verify_ssl': {'type': 'boolean'},
+}
 
 
 mcp = FastMCP(
@@ -129,7 +167,7 @@ def _run_adt_command(adt_conn_conf: ADTConnectionConfig, command: CommandType, a
     return _run_sapcli_command(adt_conn, command, args)
 
 
-def _run_sapcli_command(conn: ConnectionType, command: CommandType, args: SimpleNamespace) -> OperationResult:
+def _run_sapcli_command(conn: SAPConnectionType, command: CommandType, args: SimpleNamespace) -> OperationResult:
 
     output_buffer = OutputBuffer()
 
@@ -256,20 +294,36 @@ def abap_adt_package_list_objects(
 def _transform_sapcli_commands():
     args_tools = ArgParserTool("abap", None)
 
+    # Mapping from connection factory functions to their specific parameters
+    conn_factory_to_params = {
+        sap.cli.adt_connection_from_args: ADT_CONNECTION_PARAMS,
+        sap.cli.rfc_connection_from_args: RFC_CONNECTION_PARAMS,
+        sap.cli.gcts_connection_from_args: REST_CONNECTION_PARAMS,
+        sap.cli.odata_connection_from_args: ODATA_CONNECTION_PARAMS,
+    }
+
     # Install ArgParser and build Tools definitions
     # The list items returned by sap.cli.get_commands() are tuples
     # where:
     # - the index 0 is a connection factory function
     # - the index 1 is a sapcli command specification
-    # Hence the variable conn_type is a reference to one of the following functions:
+    # Hence the variable conn_factory is a reference to one of the following functions:
     # - ADT - sap.cli.adt_connection_from_args
     # - RFC - sap.cli.rfc_connection_from_args
     # - REST - sap.cli.gcts_connection_from_args
     # - OData - sap.cli.odata_connection_from_args
-    for conn_type, cmd in sap.cli.get_commands():
+    for conn_factory, cmd in sap.cli.get_commands():
         cmd_tool = args_tools.add_parser(cmd.name)
+
+        # Add connection parameters before install_parser so sub-parsers inherit them
+        cmd_tool.add_properties(COMMON_CONNECTION_PARAMS)
+
+        specific_params = conn_factory_to_params.get(conn_factory)
+        if specific_params is not None:
+            cmd_tool.add_properties(specific_params)
+
+        # Install parser after adding connection properties
         cmd.install_parser(cmd_tool)
-        cmd_tool.add_connection_properties(conn_type)
 
     # pylint: disable-next=fixme
     # TODO: add name transformations such as "abap_gcts_delete" to "abap_gcts_repo_delete"
@@ -285,8 +339,10 @@ def _transform_sapcli_commands():
 
 
 if __name__ == "__main__":
+    print("# Transformed ArgParser command tool properties")
     _transform_sapcli_commands()
 
+    print("# FastMCP tool properties")
     # pylint: disable=protected-access
     for k, v in mcp._tool_manager._tools.items():
         if k not in ["abap_adt_package_list_objects", "abap_adt_package_get_details"]:

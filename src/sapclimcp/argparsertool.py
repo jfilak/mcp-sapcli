@@ -1,25 +1,7 @@
 import builtins
 
 from dataclasses import dataclass, field
-from typing import (
-    Any,
-    Union,
-    Callable
-)
-
-from types import SimpleNamespace
-
-from sap import (
-    adt,
-    cli,
-)
-
-from fastmcp.tools import Tool
-from fastmcp.tools.tool import ToolResult
-
-
-ConnectionType = Union[adt.Connection]
-CommandType = Callable[[ConnectionType, SimpleNamespace], None]
+from typing import Any
 
 
 class ArgToToolConversionError(Exception):
@@ -75,50 +57,6 @@ def _argument_spec_to_json_spec(argparserArgument):
 class ArgPaserToolInputSchema:
     properties: dict[str, Any] = field(default_factory=dict)
     required: list[str] = field(default_factory=list)
-
-
-# Connection parameters for MCP tools
-# Common parameters required for all connection types
-COMMON_CONNECTION_PARAMS: dict[str, dict[str, str]] = {
-    'ashost': {'type': 'string'},
-    'client': {'type': 'string'},
-    'user': {'type': 'string'},
-    'password': {'type': 'string'},
-}
-
-# ADT connection specific parameters (sap.cli.adt_connection_from_args)
-ADT_CONNECTION_PARAMS: dict[str, dict[str, str]] = {
-    'http_port': {'type': 'integer'},
-    'use_ssl': {'type': 'boolean'},
-    'verify_ssl': {'type': 'boolean'},
-}
-
-# RFC connection specific parameters (sap.cli.rfc_connection_from_args)
-RFC_CONNECTION_PARAMS: dict[str, dict[str, str]] = {
-    'sysnr': {'type': 'string'},
-}
-
-# OData connection specific parameters (sap.cli.odata_connection_from_args)
-ODATA_CONNECTION_PARAMS: dict[str, dict[str, str]] = {
-    'http_port': {'type': 'integer'},
-    'use_ssl': {'type': 'boolean'},
-    'verify_ssl': {'type': 'boolean'},
-}
-
-# REST/gCTS connection specific parameters (sap.cli.gcts_connection_from_args)
-REST_CONNECTION_PARAMS: dict[str, dict[str, str]] = {
-    'http_port': {'type': 'integer'},
-    'use_ssl': {'type': 'boolean'},
-    'verify_ssl': {'type': 'boolean'},
-}
-
-# Mapping from connection factory functions to their specific parameters
-CONNECTION_TYPE_PARAMS: dict[Callable, dict[str, dict[str, str]]] = {
-    cli.adt_connection_from_args: ADT_CONNECTION_PARAMS,
-    cli.rfc_connection_from_args: RFC_CONNECTION_PARAMS,
-    cli.odata_connection_from_args: ODATA_CONNECTION_PARAMS,
-    cli.gcts_connection_from_args: REST_CONNECTION_PARAMS,
-}
 
 
 class ArgParserTool:
@@ -189,11 +127,19 @@ class ArgParserTool:
         return self
 
     def add_parser(self, name):
-        """Create new MCP tool from the parser
+        """Create new MCP tool from the parser.
+
+        The new parser inherits the parent's input schema properties.
         """
 
         subtool_name = self.name + "_" + name
         subtool = ArgParserTool(subtool_name, self)
+
+        # Inherit parent's properties
+        for prop_name, prop_spec in self.input_schema.properties.items():
+            subtool.input_schema.properties[prop_name] = prop_spec.copy()
+        subtool.input_schema.required.extend(self.input_schema.required)
+
         self._add_subtool(subtool)
         return subtool
 
@@ -214,48 +160,15 @@ class ArgParserTool:
         # TODO: return the default FastMCP output schema
         return {}
 
-    def add_connection_properties(self, conn_type: Callable) -> None:
-        """Add connection-specific input properties based on connection type.
+    def add_properties(self, properties: dict[str, dict[str, str]], required: bool = True) -> None:
+        """Add extra input properties to the tool schema.
 
-        The conn_type is a connection factory function returned by sap.cli.get_commands():
-        - ADT: sap.cli.adt_connection_from_args
-        - RFC: sap.cli.rfc_connection_from_args
-        - REST: sap.cli.gcts_connection_from_args
-        - OData: sap.cli.odata_connection_from_args
-
-        All connection types share common parameters (ashost, client, user, password)
-        and have their own specific parameters.
+        Args:
+            properties: Dictionary mapping property names to their JSON schema specs.
+                        Each spec should contain at least a 'type' key.
+            required: Whether the properties should be marked as required (default: True).
         """
-        # Add common connection parameters
-        for param_name, param_spec in COMMON_CONNECTION_PARAMS.items():
+        for param_name, param_spec in properties.items():
             self.input_schema.properties[param_name] = param_spec.copy()
-            self.input_schema.required.append(param_name)
-
-        # Add connection-type specific parameters
-        specific_params = CONNECTION_TYPE_PARAMS.get(conn_type, {})
-        for param_name, param_spec in specific_params.items():
-            self.input_schema.properties[param_name] = param_spec.copy()
-            self.input_schema.required.append(param_name)
-
-
-class SapcliMCPTool(Tool):
-    cmdfn: CommandType
-
-    async def run(self, arguments: dict[str, Any]) -> ToolResult:
-        self.cmdfn(conn, SimpleNamespace(arguments))
-        return ToolResult()
-
-    @classmethod
-    def from_sapcli_cmd(cls, cmd: ArgParserTool) -> Tool:
-        # TODO
-        return cls(
-            cmdfn=cmd.cmdfn,
-            name=cmd.name,
-            title=None,
-            description=None,
-            parameters=cmd.to_mcp_input_schema(),
-            output_schema=cmd.to_mcp_output_schema(),
-            annotations=None,
-            tags=set(),
-            serializer=None,
-        )
+            if required:
+                self.input_schema.required.append(param_name)
