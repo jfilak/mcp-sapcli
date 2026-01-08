@@ -3,14 +3,22 @@ Export sapcli commands as MCP tools.
 """
 
 import json
+import logging
 from io import StringIO
 from typing import (
     Any,
     Callable,
+    ClassVar,
+    FrozenSet,
+    Generic,
     NamedTuple,
     Union,
 )
+from dataclasses import dataclass
 from types import SimpleNamespace
+from typing_extensions import TypeVar
+
+from pydantic import TypeAdapter
 
 from sap import (
     adt,
@@ -24,6 +32,7 @@ import sap.cli.package
 from fastmcp import FastMCP
 from fastmcp.tools import Tool
 from fastmcp.tools.tool import ToolResult
+from fastmcp.utilities.logging import get_logger
 
 from sapclimcp.argparsertool import ArgParserTool
 
@@ -60,12 +69,11 @@ ODATA_CONNECTION_PARAMS: dict[str, dict[str, str]] = {
 }
 
 # REST/gCTS connection specific parameters
-REST_CONNECTION_PARAMS: dict[str, dict[str, str]] = {
+GCTS_CONNECTION_PARAMS: dict[str, dict[str, str]] = {
     'http_port': {'type': 'integer'},
     'use_ssl': {'type': 'boolean'},
     'verify_ssl': {'type': 'boolean'},
 }
-
 
 mcp = FastMCP(
     name="sapcli",
@@ -78,7 +86,7 @@ mcp = FastMCP(
         - CLIENT   : ABAP Client (3 upper case letters+digits)
         - USER     : user name (case insensitive)
         - PASSWORD : password (case sensitive)
-        For HTTP features, you must provide:
+        For HTTP features (ADT, gCTS both use HTTP), you must provide:
         - HTTPPORT   : the HTTP port
         - USE_SSL    : true for HTTPS; false for naked HTTP
         - VERIFY_SSL : true to check ABAP server cert validity; otherwise false
@@ -132,8 +140,8 @@ class OperationResult(NamedTuple):
     Contents: str
 
 
-class ADTConnectionConfig(NamedTuple):
-    """Crate for ADT connection configuration
+class HttpConnectionConfig(NamedTuple):
+    """Crate for HTTP-based connection configuration (ADT, gCTS).
     """
 
     ASHost: str
@@ -145,7 +153,11 @@ class ADTConnectionConfig(NamedTuple):
     VerifySSL: bool
 
 
-def _new_adt_connection(adt_conn_conf: ADTConnectionConfig) -> adt.Connection:
+# Alias for backward compatibility
+ADTConnectionConfig = HttpConnectionConfig
+
+
+def _new_adt_connection(adt_conn_conf: HttpConnectionConfig) -> adt.Connection:
     return adt.Connection(
         adt_conn_conf.ASHost,
         adt_conn_conf.Client,
@@ -157,7 +169,7 @@ def _new_adt_connection(adt_conn_conf: ADTConnectionConfig) -> adt.Connection:
     )
 
 
-def _run_adt_command(adt_conn_conf: ADTConnectionConfig, command: CommandType, args: SimpleNamespace):
+def _run_adt_command(adt_conn_conf: HttpConnectionConfig, command: CommandType, args: SimpleNamespace):
     try:
         adt_conn = _new_adt_connection(adt_conn_conf)
     except errors.SAPCliError as ex:
@@ -168,6 +180,37 @@ def _run_adt_command(adt_conn_conf: ADTConnectionConfig, command: CommandType, a
             )
 
     return _run_sapcli_command(adt_conn, command, args)
+
+
+def _new_gcts_connection(gcts_conn_conf: HttpConnectionConfig) -> adt.Connection:
+    return sap.rest.Connection(
+        'sap/bc/cts_abapvcs',
+        'system',
+        gcts_conn_conf.ASHost,
+        gcts_conn_conf.Client,
+        gcts_conn_conf.User,
+        gcts_conn_conf.Password,
+        port=gcts_conn_conf.HTTP_Port,
+        ssl=gcts_conn_conf.UseSSL,
+        verify=gcts_conn_conf.VerifySSL
+    )
+
+
+def _run_gcts_command(
+        gcts_conn_conf: HttpConnectionConfig,
+        command: CommandType,
+        args: SimpleNamespace
+) -> OperationResult:
+    try:
+        gcts_conn = _new_gcts_connection(gcts_conn_conf)
+    except errors.SAPCliError as ex:
+        return OperationResult(
+                Success=False,
+                LogMessages=['Could not connect to ABAP HTTP Server', str(ex)],
+                Contents=""
+            )
+
+    return _run_sapcli_command(gcts_conn, command, args)
 
 
 def _run_sapcli_command(conn: SAPConnectionType, command: CommandType, args: SimpleNamespace) -> OperationResult:
@@ -192,6 +235,16 @@ def _run_sapcli_command(conn: SAPConnectionType, command: CommandType, args: Sim
         )
 
 
+T = TypeVar("T", default=Any)
+
+
+@dataclass
+class _WrappedResult(Generic[T]):
+    """Generic wrapper for non-object return types."""
+
+    result: T
+
+
 class SapcliCommandToolError(Exception):
     """Error raised by SapcliCommandTool."""
 
@@ -201,11 +254,86 @@ class SapcliCommandTool(Tool):
 
     This tool wraps sapcli commands transformed from ArgParserTool
     and executes them via the appropriate connection type.
-    Currently only ADT connections are supported.
+    Supported connection types: ADT, gCTS.
     """
 
     cmdfn: CommandType
     conn_factory: Callable
+
+    # HTTP connection parameter names used by ADT and gCTS
+    HTTP_CONNECTION_PARAMS: ClassVar[FrozenSet[str]] = frozenset({
+        'ashost', 'http_port', 'client', 'user', 'password',
+        'use_ssl', 'verify_ssl'
+    })
+
+    def _extract_http_connection_config(
+            self,
+            arguments: dict[str, Any]
+    ) -> HttpConnectionConfig:
+        """Extract HTTP connection configuration from arguments.
+
+        Args:
+            arguments: Dictionary containing connection parameters.
+
+        Returns:
+            HttpConnectionConfig with the extracted values.
+        """
+        return HttpConnectionConfig(
+            ASHost=arguments['ashost'],
+            HTTP_Port=arguments['http_port'],
+            Client=arguments['client'],
+            User=arguments['user'],
+            Password=arguments['password'],
+            UseSSL=arguments['use_ssl'],
+            VerifySSL=arguments['verify_ssl']
+        )
+
+    def _extract_command_args(self, arguments: dict[str, Any]) -> SimpleNamespace:
+        """Extract command-specific arguments (excluding connection parameters).
+
+        Args:
+            arguments: Dictionary containing all arguments.
+
+        Returns:
+            SimpleNamespace with command-specific arguments only.
+        """
+        cmd_args = {
+            k: v for k, v in arguments.items()
+            if k not in self.HTTP_CONNECTION_PARAMS
+        }
+        return SimpleNamespace(**cmd_args)
+
+    def _run_adt(
+            self,
+            conn_conf: HttpConnectionConfig,
+            cmd_args: SimpleNamespace
+    ) -> OperationResult:
+        """Execute an ADT command.
+
+        Args:
+            conn_conf: HTTP connection configuration.
+            cmd_args: Command-specific arguments.
+
+        Returns:
+            OperationResult from the command execution.
+        """
+        return _run_adt_command(conn_conf, self.cmdfn, cmd_args)
+
+    def _run_gcts(
+            self,
+            conn_conf: HttpConnectionConfig,
+            cmd_args: SimpleNamespace
+    ) -> OperationResult:
+        """Execute a gCTS command.
+
+        Args:
+            conn_conf: HTTP connection configuration.
+            cmd_args: Command-specific arguments.
+
+        Returns:
+            OperationResult from the command execution.
+        """
+        return _run_gcts_command(conn_conf, self.cmdfn, cmd_args)
 
     async def run(self, arguments: dict[str, Any]) -> ToolResult:
         """Run the sapcli command with the given arguments.
@@ -217,46 +345,33 @@ class SapcliCommandTool(Tool):
             ToolResult with the command output.
 
         Raises:
-            SapcliCommandToolError: If cmdfn is None or connection type is not ADT.
+            SapcliCommandToolError: If cmdfn is None or connection type is not supported.
         """
         if self.cmdfn is None:
             raise SapcliCommandToolError(
                 f"Tool '{self.name}' has no command function (cmdfn is None)"
             )
 
-        # Only ADT connections are supported
+        conn_conf = self._extract_http_connection_config(arguments)
+        cmd_args = self._extract_command_args(arguments)
+
         # pylint: disable-next=comparison-with-callable
-        if self.conn_factory != sap.cli.adt_connection_from_args:
+        if self.conn_factory == sap.cli.adt_connection_from_args:
+            result = self._run_adt(conn_conf, cmd_args)
+        # pylint: disable-next=comparison-with-callable
+        elif self.conn_factory == sap.cli.gcts_connection_from_args:
+            result = self._run_gcts(conn_conf, cmd_args)
+        else:
             raise SapcliCommandToolError(
                 f"Tool '{self.name}' uses unsupported connection type. "
-                "Only ADT connections are currently supported."
+                "Only ADT and gCTS connections are currently supported."
             )
 
-        # Extract ADT connection configuration from arguments
-        adt_conn_conf = ADTConnectionConfig(
-            ASHost=arguments['ashost'],
-            HTTP_Port=arguments['http_port'],
-            Client=arguments['client'],
-            User=arguments['user'],
-            Password=arguments['password'],
-            UseSSL=arguments['use_ssl'],
-            VerifySSL=arguments['verify_ssl']
-        )
-
-        # Build command arguments (exclude connection parameters)
-        connection_params = {
-            'ashost', 'http_port', 'client', 'user', 'password',
-            'use_ssl', 'verify_ssl'
-        }
-        cmd_args = {k: v for k, v in arguments.items() if k not in connection_params}
-
-        result = _run_adt_command(adt_conn_conf, self.cmdfn, SimpleNamespace(**cmd_args))
-
+        # OperationResult is a NamedTuple which serializes as an array [bool, list[str], str]
         return ToolResult(
+            content=result.Contents,
             structured_content={
-                'Success': result.Success,
-                'LogMessages': result.LogMessages,
-                'Contents': result.Contents
+                'result': [result.Success, result.LogMessages, result.Contents]
             }
         )
 
@@ -285,18 +400,15 @@ class SapcliCommandTool(Tool):
                 f"Cannot create tool from '{cmd.name}': cmdfn is None"
             )
 
-        # Extract the execute function from cmdfn dict
-        execute_fn = cmd.cmdfn.get('execute')
-        if execute_fn is None:
-            raise SapcliCommandToolError(
-                f"Cannot create tool from '{cmd.name}': 'execute' not found in cmdfn"
-            )
+        output_schema = TypeAdapter(_WrappedResult[OperationResult]).json_schema(mode='serialization')
+        output_schema["x-fastmcp-wrap-result"] = True
 
         return cls(
             name=cmd.name,
             description=description or f"Execute sapcli command: {cmd.name}",
             parameters=cmd.to_mcp_input_schema(),
-            cmdfn=execute_fn,
+            output_schema=output_schema,
+            cmdfn=cmd.cmdfn,
             conn_factory=conn_factory,
         )
 
@@ -320,7 +432,7 @@ def abap_adt_connection_test(
        from the target ABAP sytem.
     """
 
-    adt_conn_conf = ADTConnectionConfig(
+    adt_conn_conf = HttpConnectionConfig(
         ashost,
         http_port,
         client,
@@ -350,7 +462,7 @@ def abap_adt_package_get_details(
     """Return ABAP package details such as compoentn and activation status.
     """
 
-    adt_conn_conf = ADTConnectionConfig(
+    adt_conn_conf = HttpConnectionConfig(
         ashost,
         http_port,
         client,
@@ -383,7 +495,7 @@ def abap_adt_package_list_objects(
     """List ABAP objects belonging the give ABAP development package hierarchy.
     """
 
-    adt_conn_conf = ADTConnectionConfig(
+    adt_conn_conf = HttpConnectionConfig(
         ashost,
         http_port,
         client,
@@ -410,7 +522,7 @@ def _transform_sapcli_commands(server: FastMCP):
     conn_factory_to_params = {
         sap.cli.adt_connection_from_args: ADT_CONNECTION_PARAMS,
         sap.cli.rfc_connection_from_args: RFC_CONNECTION_PARAMS,
-        sap.cli.gcts_connection_from_args: REST_CONNECTION_PARAMS,
+        sap.cli.gcts_connection_from_args: GCTS_CONNECTION_PARAMS,
         sap.cli.odata_connection_from_args: ODATA_CONNECTION_PARAMS,
     }
 
@@ -422,7 +534,7 @@ def _transform_sapcli_commands(server: FastMCP):
     # Hence the variable conn_factory is a reference to one of the following functions:
     # - ADT - sap.cli.adt_connection_from_args
     # - RFC - sap.cli.rfc_connection_from_args
-    # - REST - sap.cli.gcts_connection_from_args
+    # - GCTS - sap.cli.gcts_connection_from_args
     # - OData - sap.cli.odata_connection_from_args
     for conn_factory, cmd in sap.cli.get_commands():
         cmd_tool = args_tools.add_parser(cmd.name)
@@ -445,7 +557,8 @@ def _transform_sapcli_commands(server: FastMCP):
 
     for tool_name, cmd_tool in args_tools.tools.items():
         # pylint: disable=protected-access
-        if not cmd_tool._parameters or tool_name not in ["abap_package_list", "abap_package_stat"]:
+        if tool_name not in ["abap_package_list", "abap_package_stat", "abap_gcts_repolist"]:
+            print("Ignored:", tool_name)
             continue
 
         print(tool_name)
@@ -455,6 +568,9 @@ def _transform_sapcli_commands(server: FastMCP):
 
 
 if __name__ == "__main__":
+    to_client_logger = get_logger(name="fastmcp.server.context.to_client")
+    to_client_logger.setLevel(level=logging.DEBUG)
+
     print("# Transformed ArgParser command tool properties")
     _transform_sapcli_commands(mcp)
 

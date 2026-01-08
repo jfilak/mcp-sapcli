@@ -120,7 +120,7 @@ class ArgParserTool:
         if len(kwargs.keys()) != 1 or 'execute' not in kwargs:
             ArgToToolConversionError('set_defaults: ' + self.name + ' ' + str(kwargs))
 
-        self.cmdfn = kwargs
+        self.cmdfn = kwargs['execute']
 
     def add_subparsers(self):
         # I am not exactly sure what is the goal of "subparsers"
