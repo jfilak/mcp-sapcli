@@ -288,16 +288,27 @@ class SapcliCommandTool(Tool):
     def _extract_command_args(self, arguments: dict[str, Any]) -> SimpleNamespace:
         """Extract command-specific arguments (excluding connection parameters).
 
+        Also includes properties with defaults that weren't provided in arguments,
+        since the MCP server doesn't populate missing arguments with their defaults.
+
         Args:
             arguments: Dictionary containing all arguments.
 
         Returns:
             SimpleNamespace with command-specific arguments only.
         """
-        cmd_args = {
-            k: v for k, v in arguments.items()
-            if k not in self.HTTP_CONNECTION_PARAMS
-        }
+        cmd_args = {}
+
+        # Add properties with defaults that weren't provided in arguments
+        for prop_name, prop_spec in self.parameters.get('properties', {}).items():
+            if prop_name in self.HTTP_CONNECTION_PARAMS:
+                continue
+
+            if prop_name in arguments:
+                cmd_args[prop_name] = arguments[prop_name]
+            elif 'default' in prop_spec:
+                cmd_args[prop_name] = prop_spec['default']
+
         return SimpleNamespace(**cmd_args)
 
     def _run_adt(

@@ -13,6 +13,11 @@ import pytest
 # Create mock sap modules before importing the server
 # Now import the server module - use importlib to handle the hyphenated filename
 import importlib.util
+
+from sapclimcp.argparsertool import (
+    ArgParserTool
+)
+
 spec = importlib.util.spec_from_file_location(
     "sapcli_mcp_server",
     "src/sapcli-mcp-server.py"
@@ -239,3 +244,54 @@ class TestRunSapcliCommand:
         assert result.Success is False
         assert result.Contents == "test capture stdout\n"
         assert result.LogMessages == ["Command failed", "test capture stderr\n"]
+
+
+class TestSapcliCommandTool:
+    """Tests for the class SapcliCommandTool"""
+
+    @pytest.mark.asyncio
+    @patch('sap.cli.adt_connection_from_args')
+    async def test_default_values(self, mock_adt_connection_from_args):
+        """Test handling tool properties with defaults.
+
+           A property with default is an argument with default and the return
+           value of ArgumentParser.parse_args() has members for such arguments
+           even if they were not given on the commandl line.
+
+           Unless the MCP client does not call the MCP tool with the property
+           explicitly, the FastMCP server will not call the Tool method run()
+           with the parameter arguments populated with the property and its
+           default value and so the method run must explicitly add the missing
+           parameters with defaults.
+        """
+
+        mock_conn = MagicMock()
+        mock_adt_connection_from_args.return_value = mock_conn
+
+        def tester_tool_fn(conn, args):
+            # Check that the attribute exists with its default value
+            assert hasattr(args, 'logical')
+            assert args.logical is False
+
+        apt = ArgParserTool('tester', None, conn_factory=mock_adt_connection_from_args)
+        tester_tool_cmd = apt.add_parser('tool')
+        tester_tool_cmd.add_argument('--logical', action='store_true', default=False)
+        tester_tool_cmd.set_defaults(execute=tester_tool_fn)
+
+        tool = apt.tools['tester_tool']
+        assert tool.name == 'tester_tool'
+
+        sct = server.SapcliCommandTool.from_argparser_tool(
+            tool,
+            mock_adt_connection_from_args,
+        )
+
+        await sct.run({
+            'ashost': 'localhost',
+            'client': '100',
+            'user': 'DEVELOPER',
+            'password': 'Welcome1!',
+            'http_port': 50001,
+            'use_ssl': True,
+            'verify_ssl': False,
+        })
