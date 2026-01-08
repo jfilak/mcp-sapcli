@@ -2,8 +2,6 @@
 Export sapcli commands as MCP tools.
 """
 
-import json
-import logging
 from io import StringIO
 from typing import (
     Any,
@@ -32,7 +30,6 @@ import sap.cli.package
 from fastmcp import FastMCP
 from fastmcp.tools import Tool
 from fastmcp.tools.tool import ToolResult
-from fastmcp.utilities.logging import get_logger
 
 from sapclimcp.argparsertool import ArgParserTool
 
@@ -413,108 +410,6 @@ class SapcliCommandTool(Tool):
         )
 
 
-def _adt_connection_test(conn, _):
-    console = sap.cli.core.get_console()
-    conn.collection_types.items()
-    console.printout("ADT connection works!")
-
-
-@mcp.tool
-def abap_adt_connection_test(
-        ashost: str,
-        http_port: int,
-        client: str,
-        user: str,
-        password: str,
-        use_ssl: bool,
-        verify_ssl: bool) -> OperationResult:
-    """Test given ADT connection configuration by fetching ADT configuration
-       from the target ABAP sytem.
-    """
-
-    adt_conn_conf = HttpConnectionConfig(
-        ashost,
-        http_port,
-        client,
-        user,
-        password,
-        use_ssl,
-        verify_ssl
-    )
-
-    return _run_adt_command(
-        adt_conn_conf,
-        _adt_connection_test,
-        SimpleNamespace()
-    )
-
-
-@mcp.tool
-def abap_adt_package_get_details(
-        ashost: str,
-        http_port: int,
-        client: str,
-        user: str,
-        password: str,
-        use_ssl: bool,
-        verify_ssl: bool,
-        name: str) -> OperationResult:
-    """Return ABAP package details such as compoentn and activation status.
-    """
-
-    adt_conn_conf = HttpConnectionConfig(
-        ashost,
-        http_port,
-        client,
-        user,
-        password,
-        use_ssl,
-        verify_ssl
-    )
-
-    return _run_adt_command(
-        adt_conn_conf,
-        sap.cli.package.stat,
-        SimpleNamespace(
-            name=name
-        )
-    )
-
-
-@mcp.tool
-def abap_adt_package_list_objects(
-        ashost: str,
-        http_port: int,
-        client: str,
-        user: str,
-        password: str,
-        use_ssl: bool,
-        verify_ssl: bool,
-        name: str,
-        recursive: bool = False) -> OperationResult:
-    """List ABAP objects belonging the give ABAP development package hierarchy.
-    """
-
-    adt_conn_conf = HttpConnectionConfig(
-        ashost,
-        http_port,
-        client,
-        user,
-        password,
-        use_ssl,
-        verify_ssl
-    )
-
-    return _run_adt_command(
-        adt_conn_conf,
-        sap.cli.package.list_package,
-        SimpleNamespace(
-            name=name,
-            recursive=recursive
-        )
-    )
-
-
 def _transform_sapcli_commands(server: FastMCP):
     args_tools = ArgParserTool("abap", None)
 
@@ -561,27 +456,9 @@ def _transform_sapcli_commands(server: FastMCP):
             print("Ignored:", tool_name)
             continue
 
-        print(tool_name)
-        input_schema = cmd_tool.to_mcp_input_schema()
-        print(json.dumps(input_schema))
         server.add_tool(SapcliCommandTool.from_argparser_tool(cmd_tool, cmd_tool.conn_factory))
 
 
 if __name__ == "__main__":
-    to_client_logger = get_logger(name="fastmcp.server.context.to_client")
-    to_client_logger.setLevel(level=logging.DEBUG)
-
-    print("# Transformed ArgParser command tool properties")
     _transform_sapcli_commands(mcp)
-
-    print("# FastMCP tool properties")
-    # pylint: disable=protected-access
-    for k, v in mcp._tool_manager._tools.items():
-        # if k not in ["abap_adt_package_list_objects", "abap_adt_package_get_details"]:
-        #    continue
-
-        print(k)
-        print(json.dumps(v.parameters))
-        print(json.dumps(v.output_schema))
-
     mcp.run(transport="http", host="127.0.0.1", port=8000)
