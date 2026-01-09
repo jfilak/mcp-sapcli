@@ -402,7 +402,7 @@ class SapcliCommandTool(Tool):
         )
 
 
-def transform_sapcli_commands(server: FastMCP, allowed_commands: list[str] = None):
+def transform_sapcli_commands(server: FastMCP, allowed_commands: list[str] | None = None):
     """Transform sapcli commands into MCP tools and register them with the server.
 
     Args:
@@ -448,7 +448,11 @@ def transform_sapcli_commands(server: FastMCP, allowed_commands: list[str] = Non
     # TODO: add name transformations such as "abap_gcts_delete" to "abap_gcts_repo_delete"
 
     for tool_name, cmd_tool in args_tools.tools.items():
-        # pylint: disable=protected-access
+        # Skip tools without a command function (not meaningful commands)
+        if cmd_tool.cmdfn is None:
+            _LOGGER.debug("Skipped tool without cmdfn: %s", tool_name)
+            continue
+
         if allowed_commands is not None and tool_name not in allowed_commands:
             _LOGGER.debug("Ignored tool: %s", tool_name)
             continue
