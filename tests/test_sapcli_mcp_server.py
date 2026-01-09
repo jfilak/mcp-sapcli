@@ -1,6 +1,5 @@
 """Unit tests for sapcli-mcp-server.py"""
 
-import sys
 from unittest.mock import MagicMock, patch
 from types import SimpleNamespace
 from io import StringIO
@@ -10,20 +9,8 @@ import sap.cli.core
 
 import pytest
 
-# Create mock sap modules before importing the server
-# Now import the server module - use importlib to handle the hyphenated filename
-import importlib.util
-
-from sapclimcp.argparsertool import (
-    ArgParserTool
-)
-
-spec = importlib.util.spec_from_file_location(
-    "sapcli_mcp_server",
-    "src/sapcli-mcp-server.py"
-)
-server = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(server)
+from sapclimcp.argparsertool import ArgParserTool
+from sapclimcp import mcptools as server
 
 
 @pytest.fixture
@@ -78,9 +65,7 @@ class TestOutputBuffer:
         buf.err_output.write("error content")
         buf.reset()
         assert buf.capout == ""
-        # Note: There's a bug in the original code - reset() calls
-        # std_output.seek(0) twice instead of err_output.seek(0)
-        # This test verifies current behavior
+        assert buf.caperr == ""
 
 
 class TestOperationResult:
