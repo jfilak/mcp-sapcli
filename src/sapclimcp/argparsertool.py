@@ -109,9 +109,11 @@ class ArgParserTool:
             raise ArgToToolConversionError(self.name + " " + parameter + ': ' + str(ex) + " " + str(kwargs))
 
         hasdefault = 'default' in kwargs
+        # nargs='?' or nargs='*' means the argument is optional
+        optional_nargs = kwargs.get('nargs') in ['?', '*']
         # Required is either specified or True if the parameter does not have default
-        # I am not exactly sure it is the correct rule.
-        required = kwargs.get('required', not hasdefault)
+        # and is not optional due to nargs
+        required = kwargs.get('required', not hasdefault and not optional_nargs)
 
         if required:
             self.input_schema.required.append(parameter)

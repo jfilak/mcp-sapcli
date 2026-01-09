@@ -113,6 +113,7 @@ class TestArgParserToolNargs:
             "type": "array",
             "items": {"type": "string"}
         }
+        assert "items" not in schema["required"]
 
     def test_nargs_with_type_int(self):
         """Test nargs with type=int creates array of integers."""
@@ -125,6 +126,16 @@ class TestArgParserToolNargs:
             "type": "array",
             "items": {"type": "integer"}
         }
+
+    def test_nargs_question_without_type(self):
+        """Test nargs='?' without type creates optional string."""
+        tool = ArgParserTool("test", None)
+        tool.add_argument("--as4user", nargs="?")
+
+        schema = tool.to_mcp_input_schema()
+
+        assert schema["properties"]["as4user"] == {"type": "string"}
+        assert "as4user" not in schema["required"]
 
 
 class TestArgParserToolDefault:
