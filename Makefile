@@ -7,8 +7,11 @@ run_pylint:
 run_mypy:
 	mypy --config-file=mypy.ini src/sapcli-mcp-server.py
 
-check: run_mypy run_pylint run_flake8
-	@echo Checked
+lint: run_mypy run_pylint run_flake8
+	@echo Linted
 
 test:
 	PYTHONPATH=$$(pwd)/src:$$PYTHONPATH pytest tests/
+
+check: lint test
+	@echo Checked
