@@ -2,6 +2,7 @@
 MCP tool classes and helpers for sapcli commands.
 """
 
+import logging
 from io import StringIO
 from typing import (
     Any,
@@ -31,6 +32,8 @@ from fastmcp.tools import Tool
 from fastmcp.tools.tool import ToolResult
 
 from sapclimcp.argparsertool import ArgParserTool
+
+_LOGGER = logging.getLogger(__name__)
 
 # Type aliases for SAP connections and commands
 SAPConnectionType = Union[adt.Connection]
@@ -399,7 +402,7 @@ class SapcliCommandTool(Tool):
         )
 
 
-def transform_sapcli_commands(server: FastMCP):
+def transform_sapcli_commands(server: FastMCP, allowed_commands: list[str] = None):
     """Transform sapcli commands into MCP tools and register them with the server.
 
     Args:
@@ -446,8 +449,8 @@ def transform_sapcli_commands(server: FastMCP):
 
     for tool_name, cmd_tool in args_tools.tools.items():
         # pylint: disable=protected-access
-        if tool_name not in ["abap_package_list", "abap_package_stat", "abap_gcts_repolist"]:
-            print("Ignored:", tool_name)
+        if allowed_commands is not None and tool_name not in allowed_commands:
+            _LOGGER.debug("Ignored tool: %s", tool_name)
             continue
 
         server.add_tool(SapcliCommandTool.from_argparser_tool(cmd_tool, cmd_tool.conn_factory))
