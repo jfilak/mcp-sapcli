@@ -271,6 +271,7 @@ class SapcliCommandTool(Tool):
 
         Also includes properties with defaults that weren't provided in arguments,
         since the MCP server doesn't populate missing arguments with their defaults.
+        Optional properties without defaults are set to None (matching ArgumentParser behavior).
 
         Args:
             arguments: Dictionary containing all arguments.
@@ -279,8 +280,8 @@ class SapcliCommandTool(Tool):
             SimpleNamespace with command-specific arguments only.
         """
         cmd_args = {}
+        required_props = self.parameters.get('required', [])
 
-        # Add properties with defaults that weren't provided in arguments
         for prop_name, prop_spec in self.parameters.get('properties', {}).items():
             if prop_name in self.HTTP_CONNECTION_PARAMS:
                 continue
@@ -289,6 +290,9 @@ class SapcliCommandTool(Tool):
                 cmd_args[prop_name] = arguments[prop_name]
             elif 'default' in prop_spec:
                 cmd_args[prop_name] = prop_spec['default']
+            elif prop_name not in required_props:
+                # Optional properties without defaults get None (ArgumentParser behavior)
+                cmd_args[prop_name] = None
 
         return SimpleNamespace(**cmd_args)
 
@@ -334,11 +338,20 @@ class SapcliCommandTool(Tool):
             ToolResult with the command output.
 
         Raises:
-            SapcliCommandToolError: If cmdfn is None or connection type is not supported.
+            SapcliCommandToolError: If cmdfn is None, required parameters are missing,
+                or connection type is not supported.
         """
         if self.cmdfn is None:
             raise SapcliCommandToolError(
                 f"Tool '{self.name}' has no command function (cmdfn is None)"
+            )
+
+        # Validate required parameters are present
+        required_params = self.parameters.get('required', [])
+        missing_params = [p for p in required_params if p not in arguments]
+        if missing_params:
+            raise SapcliCommandToolError(
+                f"Tool '{self.name}' missing required parameters: {', '.join(missing_params)}"
             )
 
         conn_conf = self._extract_http_connection_config(arguments)

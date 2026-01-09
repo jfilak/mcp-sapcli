@@ -280,3 +280,81 @@ class TestSapcliCommandTool:
             'use_ssl': True,
             'verify_ssl': False,
         })
+
+    @pytest.mark.asyncio
+    @patch('sap.cli.adt_connection_from_args')
+    async def test_default_values_none(self, mock_adt_connection_from_args):
+        """Test handling tool properties without explicit defaults.
+
+           A property with nargs='?' or  nargs='*' does not need to have
+           explicitily set default and in that case ArgumentParser.parse_args()
+           use None in the case the argument was not present on command line.
+        """
+
+        mock_conn = MagicMock()
+        mock_adt_connection_from_args.return_value = mock_conn
+
+        def tester_tool_fn(conn, args):
+            # Check that the attribute exists with its default value
+            assert hasattr(args, 'dnul')
+            assert args.dnul is None
+
+        apt = ArgParserTool('tester', None, conn_factory=mock_adt_connection_from_args)
+        tester_tool_cmd = apt.add_parser('tool')
+        tester_tool_cmd.add_argument('--dnul', nargs='?')
+        tester_tool_cmd.set_defaults(execute=tester_tool_fn)
+
+        tool = apt.tools['tester_tool']
+        assert tool.name == 'tester_tool'
+
+        sct = server.SapcliCommandTool.from_argparser_tool(
+            tool,
+            mock_adt_connection_from_args,
+        )
+
+        await sct.run({
+            'ashost': 'localhost',
+            'client': '100',
+            'user': 'DEVELOPER',
+            'password': 'Welcome1!',
+            'http_port': 50001,
+            'use_ssl': True,
+            'verify_ssl': False,
+        })
+
+    @pytest.mark.asyncio
+    @patch('sap.cli.adt_connection_from_args')
+    async def test_missing_required_parameters(self, mock_adt_connection_from_args):
+        """Test that missing required parameters raise SapcliCommandToolError."""
+
+        mock_conn = MagicMock()
+        mock_adt_connection_from_args.return_value = mock_conn
+
+        def tester_tool_fn(conn, args):
+            pass
+
+        apt = ArgParserTool('tester', None, conn_factory=mock_adt_connection_from_args)
+        tester_tool_cmd = apt.add_parser('tool')
+        tester_tool_cmd.add_argument('--ultrastrangeunique')  # required, no default
+        tester_tool_cmd.set_defaults(execute=tester_tool_fn)
+
+        tool = apt.tools['tester_tool']
+        sct = server.SapcliCommandTool.from_argparser_tool(
+            tool,
+            mock_adt_connection_from_args,
+        )
+
+        with pytest.raises(server.SapcliCommandToolError) as exc_info:
+            await sct.run({
+                'ashost': 'localhost',
+                'client': '100',
+                'user': 'DEVELOPER',
+                'password': 'Welcome1!',
+                'http_port': 50001,
+                'use_ssl': True,
+                'verify_ssl': False,
+                # 'ultrastrangeunique' is missing
+            })
+
+        assert "missing required parameters" in str(exc_info.value)
+        assert "ultrastrangeunique" in str(exc_info.value)
