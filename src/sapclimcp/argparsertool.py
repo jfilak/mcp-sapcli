@@ -99,7 +99,8 @@ class ArgParserTool:
                 parameter = args[1]
 
             # MCP tool properties must not start with -
-            parameter = parameter.lstrip('-')
+            # Also replace dashes with underscores (matching argparse behavior)
+            parameter = parameter.lstrip('-').replace('-', '_')
 
         # Save the original configuration for debugging purposes
         self._parameters[parameter] = kwargs

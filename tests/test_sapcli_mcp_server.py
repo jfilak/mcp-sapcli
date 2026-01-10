@@ -358,3 +358,38 @@ class TestSapcliCommandTool:
 
         assert "missing required parameters" in str(exc_info.value)
         assert "ultrastrangeunique" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    @patch('sap.cli.adt_connection_from_args')
+    async def test_argument_with_dash_in_name(self, mock_adt_connection_from_args):
+        """Test that argument --name-with-dash is available as name_with_dash."""
+
+        mock_conn = MagicMock()
+        mock_adt_connection_from_args.return_value = mock_conn
+
+        def tester_tool_fn(conn, args):
+            # Check that the attribute exists with underscore name
+            assert hasattr(args, 'name_with_dash')
+            assert args.name_with_dash == 'test_value'
+
+        apt = ArgParserTool('tester', None, conn_factory=mock_adt_connection_from_args)
+        tester_tool_cmd = apt.add_parser('tool')
+        tester_tool_cmd.add_argument('--name-with-dash')
+        tester_tool_cmd.set_defaults(execute=tester_tool_fn)
+
+        tool = apt.tools['tester_tool']
+        sct = server.SapcliCommandTool.from_argparser_tool(
+            tool,
+            mock_adt_connection_from_args,
+        )
+
+        await sct.run({
+            'ashost': 'localhost',
+            'client': '100',
+            'user': 'DEVELOPER',
+            'password': 'Welcome1!',
+            'http_port': 50001,
+            'use_ssl': True,
+            'verify_ssl': False,
+            'name_with_dash': 'test_value',
+        })

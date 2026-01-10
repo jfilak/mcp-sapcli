@@ -250,7 +250,7 @@ class TestArgParserToolActionStoreFalse:
 
         schema = tool.to_mcp_input_schema()
 
-        assert schema["properties"]["no-cache"] == {"type": "boolean"}
+        assert schema["properties"]["no_cache"] == {"type": "boolean"}
 
     def test_store_false_with_default(self):
         """Test store_false with explicit default."""
@@ -259,7 +259,7 @@ class TestArgParserToolActionStoreFalse:
 
         schema = tool.to_mcp_input_schema()
 
-        assert schema["properties"]["no-verify"] == {"type": "boolean", "default": True}
+        assert schema["properties"]["no_verify"] == {"type": "boolean", "default": True}
 
 
 class TestArgParserToolActionCount:
