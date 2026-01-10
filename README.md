@@ -41,3 +41,24 @@ To start HTTP server localhost:8000 run the following bash command:
 ```bash
 python3 src/sapcli-mcp-server.py
 ```
+
+## Tools
+
+The MCP server automatically converts [sapcli
+commands](https://github.com/jfilak/sapcli/blob/master/doc/commands.md) into
+MCP tools.  This approach simplifies the MCP server maintenance and makes new
+tool exposure super simple. However, by default, only the tools that has been
+manually tested are exposed.
+
+The tools uses the following name schema:
+  - `abap_<command>_<subcommand>_<?etc ...>`
+
+Note: the prefix abap was not probably the best idea but currently sapcli works
+only with SAP ABAP systems.
+
+If you are brave and not scared of possible crashes, start the MCP server with
+the command line flag `--experimental`.
+
+```bash
+python3 src/sapcli-mcp-server.py --experimental
+```
