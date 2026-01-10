@@ -62,3 +62,11 @@ the command line flag `--experimental`.
 ```bash
 python3 src/sapcli-mcp-server.py --experimental
 ```
+
+### Verified tools
+- [abap\_package\_list](https://github.com/jfilak/sapcli/blob/master/doc/commands/package.md#list) - list objects belonging to ABAP package hierarchy
+- [abap\_package\_stat](https://github.com/jfilak/sapcli/blob/master/doc/commands/package.md#stat) - provide ABAP package information (aka libc stat)
+- [abap\_gcts\_repolist](https://github.com/jfilak/sapcli/blob/master/doc/commands/gcts.md#repolist) - lists gCTS repositories
+- [abap\_class\_read](https://github.com/jfilak/sapcli/blob/master/doc/commands/class.md#read-1) - return code of ABAP class
+- [abap\_aunit\_run](https://github.com/jfilak/sapcli/blob/master/doc/commands/aunit.md#run) - run AUnits on package, class, program, program-include, transport
+- [abap\_atc\_run](https://github.com/jfilak/sapcli/blob/master/doc/commands/atc.md#run) - run ATC checks for package, class, program

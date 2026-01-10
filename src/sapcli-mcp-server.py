@@ -13,6 +13,9 @@ VERIFIED_COMMANDS = [
     "abap_package_list",
     "abap_package_stat",
     "abap_gcts_repolist",
+    "abap_class_read",
+    "abap_aunit_run",
+    "abap_atc_run",
 ]
 
 MCP_SERVER_INSTRUCTIONS = """
