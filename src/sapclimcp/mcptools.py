@@ -28,6 +28,7 @@ import sap.cli
 import sap.cli.core
 
 from fastmcp import FastMCP
+from fastmcp.exceptions import ToolError
 from fastmcp.tools import Tool
 from fastmcp.tools.tool import ToolResult
 
@@ -223,7 +224,7 @@ class _WrappedResult(Generic[T]):
     result: T
 
 
-class SapcliCommandToolError(Exception):
+class SapcliCommandToolError(ToolError):
     """Error raised by SapcliCommandTool."""
 
 
