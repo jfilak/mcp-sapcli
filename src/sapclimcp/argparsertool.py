@@ -1,10 +1,17 @@
 import builtins
 
 from dataclasses import dataclass, field
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, FrozenSet, Set, Union
 
 
 class ArgToToolConversionError(Exception):
+
+    def __init__(self, message):
+        super().__init__(message)
+
+
+class MissingArgument(Exception):
 
     def __init__(self, message):
         super().__init__(message)
@@ -74,6 +81,9 @@ class ArgParserTool:
 
        The tools have the JSON input schema definition in the members:\
 
+       To make this class working properly, you need to call set_defaults
+       with "execute=<Callable[connection, SimpleNamespace]>". The value will
+       be stored in the member cmdfn.
     """
 
     def __init__(self, name, parent, conn_factory=None):
@@ -160,10 +170,6 @@ class ArgParserTool:
             'type': 'object',
         }
 
-    def to_mcp_output_schema(self) -> dict[str, Any]:
-        # TODO: return the default FastMCP output schema
-        return {}
-
     def add_properties(self, properties: dict[str, dict[str, str]], required: bool = True) -> None:
         """Add extra input properties to the tool schema.
 
@@ -176,3 +182,53 @@ class ArgParserTool:
             self.input_schema.properties[param_name] = param_spec.copy()
             if required:
                 self.input_schema.required.append(param_name)
+
+    def _validate_arguments(self, arguments: dict[str, Any]) -> list[str]:
+        """Validate that all required parameters are present in arguments.
+
+        Args:
+            arguments: Dictionary of provided arguments.
+
+        Returns:
+            List of missing required parameter names. Empty list if all present.
+        """
+        return [p for p in self.input_schema.required if p not in arguments]
+
+    def parse_args(
+            self,
+            arguments: dict[str, Any],
+            exclude_params: Union[Set[str], FrozenSet[str], None] = None
+    ) -> SimpleNamespace:
+        """Prepare command arguments with defaults for missing optional parameters.
+
+        This method handles the typical ArgumentParser behavior of:
+        - Using provided values from arguments
+        - Applying defaults for missing parameters that have them
+        - Setting None for optional parameters without defaults
+
+        Args:
+            arguments: Dictionary of provided arguments.
+
+        Returns:
+            SimpleNamespace with prepared arguments.
+        """
+
+        # Validate required parameters are present
+        missing_params = self._validate_arguments(arguments)
+        if missing_params:
+            raise MissingArgument(
+                f"Tool '{self.name}' missing required parameters: {', '.join(missing_params)}"
+            )
+
+        prepared = {}
+
+        for prop_name, prop_spec in self.input_schema.properties.items():
+            if prop_name in arguments:
+                prepared[prop_name] = arguments[prop_name]
+            elif 'default' in prop_spec:
+                prepared[prop_name] = prop_spec['default']
+            elif prop_name not in self.input_schema.required:
+                # Optional properties without defaults get None (ArgumentParser behavior)
+                prepared[prop_name] = None
+
+        return SimpleNamespace(**prepared)

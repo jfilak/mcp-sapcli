@@ -32,6 +32,7 @@ from fastmcp.exceptions import ToolError
 from fastmcp.tools import Tool
 from fastmcp.tools.tool import ToolResult
 
+from sapclimcp import argparsertool
 from sapclimcp.argparsertool import ArgParserTool
 
 _LOGGER = logging.getLogger(__name__)
@@ -51,9 +52,9 @@ COMMON_CONNECTION_PARAMS: dict[str, dict[str, str]] = {
 
 # ADT connection specific parameters
 ADT_CONNECTION_PARAMS: dict[str, dict[str, str]] = {
-    'http_port': {'type': 'integer'},
-    'use_ssl': {'type': 'boolean'},
-    'verify_ssl': {'type': 'boolean'},
+    'port': {'type': 'integer'},
+    'ssl': {'type': 'boolean'},
+    'verify': {'type': 'boolean'},
 }
 
 # RFC connection specific parameters
@@ -63,16 +64,16 @@ RFC_CONNECTION_PARAMS: dict[str, dict[str, str]] = {
 
 # OData connection specific parameters
 ODATA_CONNECTION_PARAMS: dict[str, dict[str, str]] = {
-    'http_port': {'type': 'integer'},
-    'use_ssl': {'type': 'boolean'},
-    'verify_ssl': {'type': 'boolean'},
+    'port': {'type': 'integer'},
+    'ssl': {'type': 'boolean'},
+    'verify': {'type': 'boolean'},
 }
 
 # REST/gCTS connection specific parameters
 GCTS_CONNECTION_PARAMS: dict[str, dict[str, str]] = {
-    'http_port': {'type': 'integer'},
-    'use_ssl': {'type': 'boolean'},
-    'verify_ssl': {'type': 'boolean'},
+    'port': {'type': 'integer'},
+    'ssl': {'type': 'boolean'},
+    'verify': {'type': 'boolean'},
 }
 
 
@@ -119,38 +120,9 @@ class OperationResult(NamedTuple):
     Contents: str
 
 
-class HttpConnectionConfig(NamedTuple):
-    """Crate for HTTP-based connection configuration (ADT, gCTS).
-    """
-
-    ASHost: str
-    HTTP_Port: int
-    Client: str
-    User: str
-    Password: str
-    UseSSL: bool
-    VerifySSL: bool
-
-
-# Alias for backward compatibility
-ADTConnectionConfig = HttpConnectionConfig
-
-
-def _new_adt_connection(adt_conn_conf: HttpConnectionConfig) -> adt.Connection:
-    return adt.Connection(
-        adt_conn_conf.ASHost,
-        adt_conn_conf.Client,
-        adt_conn_conf.User,
-        adt_conn_conf.Password,
-        port=adt_conn_conf.HTTP_Port,
-        ssl=adt_conn_conf.UseSSL,
-        verify=adt_conn_conf.VerifySSL
-    )
-
-
-def _run_adt_command(adt_conn_conf: HttpConnectionConfig, command: CommandType, args: SimpleNamespace):
+def _run_adt_command(args: SimpleNamespace, command: CommandType):
     try:
-        adt_conn = _new_adt_connection(adt_conn_conf)
+        adt_conn = sap.cli.adt_connection_from_args(args)
     except errors.SAPCliError as ex:
         return OperationResult(
                 Success=False,
@@ -158,30 +130,15 @@ def _run_adt_command(adt_conn_conf: HttpConnectionConfig, command: CommandType, 
                 Contents=""
             )
 
-    return _run_sapcli_command(adt_conn, command, args)
-
-
-def _new_gcts_connection(gcts_conn_conf: HttpConnectionConfig) -> adt.Connection:
-    return sap.rest.Connection(
-        'sap/bc/cts_abapvcs',
-        'system',
-        gcts_conn_conf.ASHost,
-        gcts_conn_conf.Client,
-        gcts_conn_conf.User,
-        gcts_conn_conf.Password,
-        port=gcts_conn_conf.HTTP_Port,
-        ssl=gcts_conn_conf.UseSSL,
-        verify=gcts_conn_conf.VerifySSL
-    )
+    return _run_sapcli_command(command, adt_conn, args)
 
 
 def _run_gcts_command(
-        gcts_conn_conf: HttpConnectionConfig,
+        args: SimpleNamespace,
         command: CommandType,
-        args: SimpleNamespace
 ) -> OperationResult:
     try:
-        gcts_conn = _new_gcts_connection(gcts_conn_conf)
+        gcts_conn = sap.cli.gcts_connection_from_args(args)
     except errors.SAPCliError as ex:
         return OperationResult(
                 Success=False,
@@ -189,10 +146,10 @@ def _run_gcts_command(
                 Contents=""
             )
 
-    return _run_sapcli_command(gcts_conn, command, args)
+    return _run_sapcli_command(command, gcts_conn, args)
 
 
-def _run_sapcli_command(conn: SAPConnectionType, command: CommandType, args: SimpleNamespace) -> OperationResult:
+def _run_sapcli_command(command: CommandType, conn: SAPConnectionType, args: SimpleNamespace) -> OperationResult:
 
     output_buffer = OutputBuffer()
 
@@ -236,70 +193,19 @@ class SapcliCommandTool(Tool):
     Supported connection types: ADT, gCTS.
     """
 
-    cmdfn: CommandType
-    conn_factory: Callable
+    # WTF is this?
+    model_config = {'arbitrary_types_allowed': True}
+
+    arg_tool: ArgParserTool
 
     # HTTP connection parameter names used by ADT and gCTS
     HTTP_CONNECTION_PARAMS: ClassVar[FrozenSet[str]] = frozenset({
-        'ashost', 'http_port', 'client', 'user', 'password',
-        'use_ssl', 'verify_ssl'
+        'ashost', 'port', 'client', 'user', 'password',
+        'ssl', 'verify'
     })
-
-    def _extract_http_connection_config(
-            self,
-            arguments: dict[str, Any]
-    ) -> HttpConnectionConfig:
-        """Extract HTTP connection configuration from arguments.
-
-        Args:
-            arguments: Dictionary containing connection parameters.
-
-        Returns:
-            HttpConnectionConfig with the extracted values.
-        """
-        return HttpConnectionConfig(
-            ASHost=arguments['ashost'],
-            HTTP_Port=arguments['http_port'],
-            Client=arguments['client'],
-            User=arguments['user'],
-            Password=arguments['password'],
-            UseSSL=arguments['use_ssl'],
-            VerifySSL=arguments['verify_ssl']
-        )
-
-    def _extract_command_args(self, arguments: dict[str, Any]) -> SimpleNamespace:
-        """Extract command-specific arguments (excluding connection parameters).
-
-        Also includes properties with defaults that weren't provided in arguments,
-        since the MCP server doesn't populate missing arguments with their defaults.
-        Optional properties without defaults are set to None (matching ArgumentParser behavior).
-
-        Args:
-            arguments: Dictionary containing all arguments.
-
-        Returns:
-            SimpleNamespace with command-specific arguments only.
-        """
-        cmd_args = {}
-        required_props = self.parameters.get('required', [])
-
-        for prop_name, prop_spec in self.parameters.get('properties', {}).items():
-            if prop_name in self.HTTP_CONNECTION_PARAMS:
-                continue
-
-            if prop_name in arguments:
-                cmd_args[prop_name] = arguments[prop_name]
-            elif 'default' in prop_spec:
-                cmd_args[prop_name] = prop_spec['default']
-            elif prop_name not in required_props:
-                # Optional properties without defaults get None (ArgumentParser behavior)
-                cmd_args[prop_name] = None
-
-        return SimpleNamespace(**cmd_args)
 
     def _run_adt(
             self,
-            conn_conf: HttpConnectionConfig,
             cmd_args: SimpleNamespace
     ) -> OperationResult:
         """Execute an ADT command.
@@ -311,11 +217,10 @@ class SapcliCommandTool(Tool):
         Returns:
             OperationResult from the command execution.
         """
-        return _run_adt_command(conn_conf, self.cmdfn, cmd_args)
+        return _run_adt_command(cmd_args, self.arg_tool.cmdfn)
 
     def _run_gcts(
             self,
-            conn_conf: HttpConnectionConfig,
             cmd_args: SimpleNamespace
     ) -> OperationResult:
         """Execute a gCTS command.
@@ -327,7 +232,7 @@ class SapcliCommandTool(Tool):
         Returns:
             OperationResult from the command execution.
         """
-        return _run_gcts_command(conn_conf, self.cmdfn, cmd_args)
+        return _run_gcts_command(cmd_args, self.arg_tool.cmdfn)
 
     async def run(self, arguments: dict[str, Any]) -> ToolResult:
         """Run the sapcli command with the given arguments.
@@ -342,28 +247,22 @@ class SapcliCommandTool(Tool):
             SapcliCommandToolError: If cmdfn is None, required parameters are missing,
                 or connection type is not supported.
         """
-        if self.cmdfn is None:
+        if self.arg_tool.cmdfn is None:
             raise SapcliCommandToolError(
                 f"Tool '{self.name}' has no command function (cmdfn is None)"
             )
 
-        # Validate required parameters are present
-        required_params = self.parameters.get('required', [])
-        missing_params = [p for p in required_params if p not in arguments]
-        if missing_params:
-            raise SapcliCommandToolError(
-                f"Tool '{self.name}' missing required parameters: {', '.join(missing_params)}"
-            )
-
-        conn_conf = self._extract_http_connection_config(arguments)
-        cmd_args = self._extract_command_args(arguments)
+        try:
+            cmd_args = self.arg_tool.parse_args(arguments)
+        except argparsertool.MissingArgument as ex:
+            raise SapcliCommandToolError(str(ex))
 
         # pylint: disable-next=comparison-with-callable
-        if self.conn_factory == sap.cli.adt_connection_from_args:
-            result = self._run_adt(conn_conf, cmd_args)
+        if self.arg_tool.conn_factory == sap.cli.adt_connection_from_args:
+            result = self._run_adt(cmd_args)
         # pylint: disable-next=comparison-with-callable
-        elif self.conn_factory == sap.cli.gcts_connection_from_args:
-            result = self._run_gcts(conn_conf, cmd_args)
+        elif self.arg_tool.conn_factory == sap.cli.gcts_connection_from_args:
+            result = self._run_gcts(cmd_args)
         else:
             raise SapcliCommandToolError(
                 f"Tool '{self.name}' uses unsupported connection type. "
@@ -382,14 +281,12 @@ class SapcliCommandTool(Tool):
     def from_argparser_tool(
         cls,
         cmd: ArgParserTool,
-        conn_factory: Callable,
         description: str | None = None
     ) -> 'SapcliCommandTool':
         """Create a SapcliCommandTool from an ArgParserTool.
 
         Args:
             cmd: The ArgParserTool containing command definition.
-            conn_factory: The connection factory function for this command.
             description: Optional description for the tool.
 
         Returns:
@@ -398,11 +295,6 @@ class SapcliCommandTool(Tool):
         Raises:
             SapcliCommandToolError: If cmd.cmdfn is None.
         """
-        if cmd.cmdfn is None:
-            raise SapcliCommandToolError(
-                f"Cannot create tool from '{cmd.name}': cmdfn is None"
-            )
-
         output_schema = TypeAdapter(_WrappedResult[OperationResult]).json_schema(mode='serialization')
         output_schema["x-fastmcp-wrap-result"] = True
 
@@ -411,8 +303,7 @@ class SapcliCommandTool(Tool):
             description=description or f"Execute sapcli command: {cmd.name}",
             parameters=cmd.to_mcp_input_schema(),
             output_schema=output_schema,
-            cmdfn=cmd.cmdfn,
-            conn_factory=conn_factory,
+            arg_tool=cmd,
         )
 
 
@@ -423,6 +314,7 @@ def transform_sapcli_commands(server: FastMCP, allowed_commands: list[str] | Non
         server: The FastMCP server instance to register tools with.
     """
     args_tools = ArgParserTool("abap", None)
+    args_tools.add_properties(COMMON_CONNECTION_PARAMS)
 
     # Mapping from connection factory functions to their specific parameters
     conn_factory_to_params = {
@@ -448,9 +340,6 @@ def transform_sapcli_commands(server: FastMCP, allowed_commands: list[str] | Non
         # Set connection factory before install_parser so sub-parsers inherit it
         cmd_tool.conn_factory = conn_factory
 
-        # Add connection parameters before install_parser so sub-parsers inherit them
-        cmd_tool.add_properties(COMMON_CONNECTION_PARAMS)
-
         specific_params = conn_factory_to_params.get(conn_factory)
         if specific_params is not None:
             cmd_tool.add_properties(specific_params)
@@ -471,4 +360,4 @@ def transform_sapcli_commands(server: FastMCP, allowed_commands: list[str] | Non
             _LOGGER.debug("Ignored tool: %s", tool_name)
             continue
 
-        server.add_tool(SapcliCommandTool.from_argparser_tool(cmd_tool, cmd_tool.conn_factory))
+        server.add_tool(SapcliCommandTool.from_argparser_tool(cmd_tool))
