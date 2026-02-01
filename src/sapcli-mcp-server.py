@@ -16,6 +16,7 @@ VERIFIED_COMMANDS = [
     "abap_class_read",
     "abap_aunit_run",
     "abap_atc_run",
+    "abap_ddl_read",
 ]
 
 MCP_SERVER_INSTRUCTIONS = """
