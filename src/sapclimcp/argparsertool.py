@@ -140,7 +140,7 @@ class ArgParserTool:
         # because commands are defined by "add_parser".
         return self
 
-    def add_parser(self, name):
+    def add_parser(self, name, help: str | None=None):
         """Create new MCP tool from the parser.
 
         The new parser inherits the parent's input schema properties and connection factory.
