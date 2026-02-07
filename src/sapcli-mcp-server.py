@@ -12,6 +12,10 @@ from sapclimcp.mcptools import transform_sapcli_commands
 VERIFIED_COMMANDS = [
     "abap_package_list",
     "abap_package_stat",
+    "abap_package_create",
+    "abap_program_create",
+    "abap_program_read",
+    "abap_program_activate",
     "abap_gcts_repolist",
     "abap_class_read",
     "abap_aunit_run",

@@ -63,11 +63,22 @@ the command line flag `--experimental`.
 python3 src/sapcli-mcp-server.py --experimental
 ```
 
+### Implementation Details
+- MCP tool definitions are automatically generated from Python's ArgParser definitions in the module sap.cli
+- every sapcli command is supposed to use sap.cli.core.PrintConsole to print out data (no direct output is allowed)
+- MCP server replaces the default sap.cli.core.PrintConsole with it is own buffer based implementation and returns the captured output
+
 ### Verified tools
 - [abap\_package\_list](https://github.com/jfilak/sapcli/blob/master/doc/commands/package.md#list) - list objects belonging to ABAP package hierarchy
 - [abap\_package\_stat](https://github.com/jfilak/sapcli/blob/master/doc/commands/package.md#stat) - provide ABAP package information (aka libc stat)
-- [abap\_gcts\_repolist](https://github.com/jfilak/sapcli/blob/master/doc/commands/gcts.md#repolist) - lists gCTS repositories
+- [abap\_package\_create](https://github.com/jfilak/sapcli/blob/master/doc/commands/package.md#create) - provide ABAP package information (aka libc stat)
+
+- [abap\_program\_create](https://github.com/jfilak/sapcli/blob/master/doc/commands/program.md#create) - create ABAP Program
+- [abap\_program\_read](https://github.com/jfilak/sapcli/blob/master/doc/commands/program.md#read) - return code of ABAP Program
+- [abap\_program\_activate](https://github.com/jfilak/sapcli/blob/master/doc/commands/program.md#activate) - activate ABAP Program
+
 - [abap\_class\_read](https://github.com/jfilak/sapcli/blob/master/doc/commands/class.md#read-1) - return code of ABAP class
 - [abap\_ddl\_read](https://github.com/jfilak/sapcli/blob/master/doc/commands/ddl.md#read) - return code of CDS view
 - [abap\_aunit\_run](https://github.com/jfilak/sapcli/blob/master/doc/commands/aunit.md#run) - run AUnits on package, class, program, program-include, transport
 - [abap\_atc\_run](https://github.com/jfilak/sapcli/blob/master/doc/commands/atc.md#run) - run ATC checks for package, class, program
+- [abap\_gcts\_repolist](https://github.com/jfilak/sapcli/blob/master/doc/commands/gcts.md#repolist) - lists gCTS repositories
