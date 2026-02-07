@@ -400,3 +400,47 @@ class TestArgParserToolAddProperties:
         schema = tool.to_mcp_input_schema()
         assert "optional" in schema["properties"]
         assert "optional" not in schema["required"]
+
+
+class TestArgParserToolParseArgsArrayCoercion:
+    """Tests for array coercion in parse_args.
+
+    MCP clients may pass a single string for array-typed parameters
+    (e.g. nargs='+'), so parse_args must wrap it in a list.
+    """
+
+    def test_string_coerced_to_list_for_nargs_plus(self):
+        """Test that a string value is wrapped in a list for nargs='+' argument."""
+        tool = ArgParserTool("test", None)
+        tool.add_argument("name", nargs="+")
+
+        result = tool.parse_args({"name": "ZPROG"})
+
+        assert result.name == ["ZPROG"]
+
+    def test_list_kept_as_list_for_nargs_plus(self):
+        """Test that a list value stays as-is for nargs='+' argument."""
+        tool = ArgParserTool("test", None)
+        tool.add_argument("name", nargs="+")
+
+        result = tool.parse_args({"name": ["ZPROG1", "ZPROG2"]})
+
+        assert result.name == ["ZPROG1", "ZPROG2"]
+
+    def test_string_coerced_to_list_for_append_action(self):
+        """Test that a string value is wrapped in a list for action='append' argument."""
+        tool = ArgParserTool("test", None)
+        tool.add_argument("--items", action="append")
+
+        result = tool.parse_args({"items": "one"})
+
+        assert result.items == ["one"]
+
+    def test_non_array_string_not_coerced(self):
+        """Test that a plain string argument is not affected by array coercion."""
+        tool = ArgParserTool("test", None)
+        tool.add_argument("name")
+
+        result = tool.parse_args({"name": "ZPROG"})
+
+        assert result.name == "ZPROG"

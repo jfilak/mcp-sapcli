@@ -41,9 +41,7 @@ def _argument_spec_to_json_spec(argparserArgument):
     typ = argparserArgument.get('type', None)
     nargs = argparserArgument.get('nargs', '')
 
-    if (action is None and typ is None):
-        spec = _builtin_to_spec(str)
-    elif (action == 'append') or (nargs in ['+', '*']):
+    if (action == 'append') or (nargs in ['+', '*']):
         if typ is None:
             item_spec = _builtin_to_spec(str)
         else:
@@ -53,6 +51,8 @@ def _argument_spec_to_json_spec(argparserArgument):
         spec = _builtin_to_spec(bool)
     elif action in ['count']:
         spec = _builtin_to_spec(int)
+    elif (action is None and typ is None):
+        spec = _builtin_to_spec(str)
     else:
         spec = _builtin_to_spec(typ)
 
@@ -224,7 +224,12 @@ class ArgParserTool:
 
         for prop_name, prop_spec in self.input_schema.properties.items():
             if prop_name in arguments:
-                prepared[prop_name] = arguments[prop_name]
+                value = arguments[prop_name]
+                # Ensure array-typed properties are always lists
+                # (MCP clients may pass a single string instead of a list)
+                if prop_spec.get('type') == 'array' and not isinstance(value, list):
+                    value = [value]
+                prepared[prop_name] = value
             elif 'default' in prop_spec:
                 prepared[prop_name] = prop_spec['default']
             elif prop_name not in self.input_schema.required:
