@@ -1,0 +1,13 @@
+sapcli-mcp.json
+.env
+.venv/
+*.egg-info/
+__pycache__/
+*.pyc
+dist/
+build/
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+requirements-prod.txt

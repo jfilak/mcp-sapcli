@@ -1,0 +1,49 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mcp-sapcli"
+version = "0.1.0"
+description = "MCP server exposing sapcli (SAP ABAP) commands as tools"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.12"
+dependencies = [
+    "fastmcp",
+    "pydantic",
+    "pyodata",
+    "sapcli @ git+https://github.com/jfilak/sapcli.git@555226a0fdea4b775b83fe1ef3b029993d141404",
+]
+
+[project.optional-dependencies]
+keyring = [
+    "keyring",
+]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "pytest-cov",
+    "mypy",
+    "flake8",
+    "pylint",
+]
+
+[project.scripts]
+sapcli-mcp = "sapclimcp.cli:main"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sapclimcp"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+markers = [
+    "e2e: End-to-end tests requiring a live SAP system",
+]

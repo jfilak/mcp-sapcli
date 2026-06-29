@@ -99,7 +99,7 @@ class TestArgParserToolNargs:
 
         assert schema["properties"]["files"] == {
             "type": "array",
-            "items": {"type": "string"}
+            "items": {"type": "string"},
         }
 
     def test_nargs_star_with_type_str(self):
@@ -111,7 +111,7 @@ class TestArgParserToolNargs:
 
         assert schema["properties"]["items"] == {
             "type": "array",
-            "items": {"type": "string"}
+            "items": {"type": "string"},
         }
         assert "items" not in schema["required"]
 
@@ -124,7 +124,7 @@ class TestArgParserToolNargs:
 
         assert schema["properties"]["numbers"] == {
             "type": "array",
-            "items": {"type": "integer"}
+            "items": {"type": "integer"},
         }
 
     def test_nargs_question_without_type(self):
@@ -168,7 +168,10 @@ class TestArgParserToolDefault:
 
         schema = tool.to_mcp_input_schema()
 
-        assert schema["properties"]["recursive"] == {"type": "boolean", "default": False}
+        assert schema["properties"]["recursive"] == {
+            "type": "boolean",
+            "default": False,
+        }
 
     def test_no_default_is_required(self):
         """Test argument without default is required."""
@@ -218,6 +221,43 @@ class TestArgParserToolType:
             tool.add_argument("--data", type=float)
 
 
+class TestArgParserToolChoices:
+    """Tests for choices parameter → enum in JSON schema."""
+
+    def test_choices_adds_enum(self):
+        """Test that choices parameter produces an enum field."""
+        tool = ArgParserTool("test", None)
+        tool.add_argument("--type", default="main", choices=["main", "definitions", "testclasses"])
+
+        schema = tool.to_mcp_input_schema()
+
+        assert schema["properties"]["type"]["enum"] == [
+            "main",
+            "definitions",
+            "testclasses",
+        ]
+        assert schema["properties"]["type"]["default"] == "main"
+
+    def test_choices_with_positional(self):
+        """Test choices on a positional argument."""
+        tool = ArgParserTool("test", None)
+        tool.add_argument("active", choices=["true", "false"])
+
+        schema = tool.to_mcp_input_schema()
+
+        assert schema["properties"]["active"]["enum"] == ["true", "false"]
+        assert "active" in schema["required"]
+
+    def test_no_choices_no_enum(self):
+        """Test that without choices, no enum field is present."""
+        tool = ArgParserTool("test", None)
+        tool.add_argument("--name")
+
+        schema = tool.to_mcp_input_schema()
+
+        assert "enum" not in schema["properties"]["name"]
+
+
 class TestArgParserToolActionStoreTrue:
     """Tests for action='store_true'."""
 
@@ -228,7 +268,9 @@ class TestArgParserToolActionStoreTrue:
 
         schema = tool.to_mcp_input_schema()
 
-        assert schema["properties"]["verbose"] == {"type": "boolean"}
+        # store_true carries an implicit False default (matches argparse), so an
+        # omitted optional flag resolves to False rather than None.
+        assert schema["properties"]["verbose"] == {"type": "boolean", "default": False}
 
     def test_store_true_with_default(self):
         """Test store_true with explicit default."""
@@ -250,7 +292,8 @@ class TestArgParserToolActionStoreFalse:
 
         schema = tool.to_mcp_input_schema()
 
-        assert schema["properties"]["no_cache"] == {"type": "boolean"}
+        # store_false carries an implicit True default (matches argparse).
+        assert schema["properties"]["no_cache"] == {"type": "boolean", "default": True}
 
     def test_store_false_with_default(self):
         """Test store_false with explicit default."""
@@ -296,7 +339,7 @@ class TestArgParserToolActionAppend:
 
         assert schema["properties"]["include"] == {
             "type": "array",
-            "items": {"type": "string"}
+            "items": {"type": "string"},
         }
 
     def test_append_with_type(self):
@@ -308,7 +351,7 @@ class TestArgParserToolActionAppend:
 
         assert schema["properties"]["port"] == {
             "type": "array",
-            "items": {"type": "integer"}
+            "items": {"type": "integer"},
         }
 
 
@@ -341,7 +384,10 @@ class TestArgParserToolInheritance:
 
     def test_subparser_inherits_conn_factory(self):
         """Test that subparser inherits parent's conn_factory."""
-        mock_factory = lambda: None
+
+        def mock_factory():
+            return None
+
         parent = ArgParserTool("parent", None, conn_factory=mock_factory)
 
         child = parent.add_parser("child")
@@ -354,6 +400,44 @@ class TestArgParserToolInheritance:
         child = parent.add_parser("child")
 
         assert child.name == "parent_child"
+
+    def test_late_parent_argument_propagates_to_existing_subtools(self):
+        """Test that adding an argument to the parent after subtools exist
+        propagates the argument to those subtools."""
+        parent = ArgParserTool("parent", None)
+        child = parent.add_parser("child")
+
+        # Add argument to parent AFTER child was created
+        parent.add_argument("-i", "--impl_name", help="test")
+
+        child_schema = child.to_mcp_input_schema()
+        assert "impl_name" in child_schema["properties"]
+        assert "impl_name" in child_schema["required"]
+
+    def test_late_parent_optional_argument_propagates(self):
+        """Test that optional arguments propagate without being required."""
+        parent = ArgParserTool("parent", None)
+        child = parent.add_parser("child")
+
+        parent.add_argument("--optional_flag", default="foo")
+
+        child_schema = child.to_mcp_input_schema()
+        assert "optional_flag" in child_schema["properties"]
+        assert "optional_flag" not in child_schema["required"]
+
+    def test_late_propagation_does_not_overwrite_existing(self):
+        """Test that propagation does not overwrite if child already has the property."""
+        parent = ArgParserTool("parent", None)
+        child = parent.add_parser("child")
+
+        # Child adds its own version first
+        child.add_argument("--shared", default="child_default")
+        # Parent adds same name later
+        parent.add_argument("--shared", default="parent_default")
+
+        child_schema = child.to_mcp_input_schema()
+        # Child's original definition should be preserved
+        assert child_schema["properties"]["shared"]["default"] == "child_default"
 
 
 class TestArgParserToolSetDefaults:
