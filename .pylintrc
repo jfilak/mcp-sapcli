@@ -1,5 +1,5 @@
 [BASIC]
-good-names=i,j,k,ex,Run,_,__,sapcli-mcp-server
+good-names=i,j,k,ex,Run,_,__,sapcli-mcp-server,sapcli-mcp-client,start-mcp,argparserArgument
 
 [FORMAT]
 max-line-length=160

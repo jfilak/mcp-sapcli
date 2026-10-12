@@ -11,21 +11,17 @@ from fastmcp import Client
 
 def parse_args():
     """Parse command line arguments."""
-    parser = argparse.ArgumentParser(
-        description="MCP client for sapcli server"
-    )
+    parser = argparse.ArgumentParser(description="MCP client for sapcli server")
 
     # Connection mode
     mode_group = parser.add_mutually_exclusive_group(required=True)
     mode_group.add_argument(
         "--http",
         metavar="URL",
-        help="Connect to HTTP server at the specified URL (e.g., http://localhost:8000/mcp)"
+        help="Connect to HTTP server at the specified URL (e.g., http://localhost:8000/mcp)",
     )
     mode_group.add_argument(
-        "--local",
-        action="store_true",
-        help="Run with local in-memory MCP server"
+        "--local", action="store_true", help="Run with local in-memory MCP server"
     )
 
     # Action to perform
@@ -35,35 +31,32 @@ def parse_args():
         action="store_true",
         dest="list_tools",
         default=True,
-        help="List available tools (default)"
+        help="List available tools (default)",
     )
     action_group.add_argument(
         "--list-md",
         action="store_true",
         dest="list_tools_md",
-        help="List available tools in Markdown format (name and description)"
+        help="List available tools in Markdown format (name and description)",
     )
     action_group.add_argument(
-        "--inspect",
-        metavar="TOOL",
-        help="Print the definition of the specified tool"
+        "--inspect", metavar="TOOL", help="Print the definition of the specified tool"
     )
     action_group.add_argument(
-        "--execute",
-        action="store_true",
-        help="Execute the preconfigured tool"
+        "--execute", action="store_true", help="Execute the preconfigured tool"
     )
     action_group.add_argument(
         "--test-program",
         action="store_true",
-        help="Test ABAP program lifecycle: create package, create program, write source, read source, activate program"
+        help="Test ABAP program lifecycle: create package, create program, "
+        "write source, read source, activate program",
     )
 
     # Experimental mode
     parser.add_argument(
         "--experimental",
         action="store_true",
-        help="Expose all meaningful sapcli commands as tools (not just verified ones)"
+        help="Expose all meaningful sapcli commands as tools (not just verified ones)",
     )
 
     return parser.parse_args()
@@ -77,18 +70,9 @@ def create_client(args):
     # Local in-memory mode - import and use the server directly
     # Import here to avoid loading SAP modules when using HTTP mode
     # pylint: disable=import-outside-toplevel
-    import importlib.util
-    spec = importlib.util.spec_from_file_location(
-        "sapcli_mcp_server",
-        "src/sapcli-mcp-server.py"
-    )
-    server_module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(server_module)
+    from sapclimcp.server import create_mcp_server
 
-    mcp = server_module.create_mcp_server(
-        name="sapcli-local",
-        experimental=args.experimental
-    )
+    mcp = create_mcp_server(name="sapcli-local", experimental=args.experimental)
     return Client(mcp)
 
 
@@ -136,13 +120,13 @@ async def execute_tool(client):
     """Execute the preconfigured tool."""
 
     http_connection_parameters = {
-        'ashost': 'localhost',
-        'client': '001',
-        'user': 'DEVELOPER',
-        'password': 'ABAPtr2023#00',
-        'port': 50001,
-        'ssl': True,
-        'verify': False,
+        "ashost": "localhost",
+        "client": "001",
+        "user": "DEVELOPER",
+        "password": "ABAPtr2023#00",
+        "port": 50001,
+        "ssl": True,
+        "verify": False,
     }
 
     async with client:
@@ -151,10 +135,10 @@ async def execute_tool(client):
 
         print("### abap_package_stat ###")
         package_stat_parameters = dict(http_connection_parameters)
-        package_stat_parameters.update({'name': 'SOOL'})
+        package_stat_parameters.update({"name": "SOOL"})
 
         result = await client.call_tool(
-            'abap_package_stat',
+            "abap_package_stat",
             package_stat_parameters,
         )
 
@@ -162,13 +146,15 @@ async def execute_tool(client):
 
         print("### abap_package_list ###")
         package_list_parameters = dict(http_connection_parameters)
-        package_list_parameters.update({
-            'name': 'SOOL',
-            'recursive': 'true',
-        })
+        package_list_parameters.update(
+            {
+                "name": "SOOL",
+                "recursive": "true",
+            }
+        )
 
         result = await client.call_tool(
-            'abap_package_list',
+            "abap_package_list",
             package_list_parameters,
         )
 
@@ -176,7 +162,7 @@ async def execute_tool(client):
 
         print("### abap_gcts_repolist ###")
         result = await client.call_tool(
-            'abap_gcts_repolist',
+            "abap_gcts_repolist",
             http_connection_parameters,
         )
 
@@ -184,10 +170,10 @@ async def execute_tool(client):
 
         print("### abap_class_read ###")
         class_read_parameters = dict(http_connection_parameters)
-        class_read_parameters.update({'name': 'CL_MESSAGE'})
+        class_read_parameters.update({"name": "CL_MESSAGE"})
 
         result = await client.call_tool(
-            'abap_class_read',
+            "abap_class_read",
             class_read_parameters,
         )
 
@@ -195,10 +181,10 @@ async def execute_tool(client):
 
         print("### abap_ddl_read ###")
         ddl_read_parameters = dict(http_connection_parameters)
-        ddl_read_parameters.update({'name': '/DMO/I_Connection_R'})
+        ddl_read_parameters.update({"name": "/DMO/I_Connection_R"})
 
         result = await client.call_tool(
-            'abap_ddl_read',
+            "abap_ddl_read",
             ddl_read_parameters,
         )
 
@@ -206,13 +192,15 @@ async def execute_tool(client):
 
         print("### abap_aunit_run ###")
         aunit_parameters = dict(http_connection_parameters)
-        aunit_parameters.update({
-            'type': 'package',
-            'name': 'SOOL',
-        })
+        aunit_parameters.update(
+            {
+                "type": "package",
+                "name": "SOOL",
+            }
+        )
 
         result = await client.call_tool(
-            'abap_aunit_run',
+            "abap_aunit_run",
             aunit_parameters,
         )
 
@@ -220,13 +208,15 @@ async def execute_tool(client):
 
         print("### abap_atc_run ###")
         atc_parameters = dict(http_connection_parameters)
-        atc_parameters.update({
-            'type': 'package',
-            'name': 'SOOL',
-        })
+        atc_parameters.update(
+            {
+                "type": "package",
+                "name": "SOOL",
+            }
+        )
 
         result = await client.call_tool(
-            'abap_atc_run',
+            "abap_atc_run",
             atc_parameters,
         )
 
@@ -234,16 +224,16 @@ async def execute_tool(client):
 
 
 async def test_program(client):
-    """Test ABAP program lifecycle: create package, create program, write source, read source, activate."""
+    """Test ABAP program lifecycle: create, write source, read, activate."""
 
     mock_connection_parameters = {
-        'ashost': 'localhost',
-        'client': '100',
-        'user': 'DEVELOPER',
-        'password': 'Welcome1!',
-        'port': 50001,
-        'ssl': False,
-        'verify': False,
+        "ashost": "localhost",
+        "client": "100",
+        "user": "DEVELOPER",
+        "password": "Welcome1!",
+        "port": 50001,
+        "ssl": False,
+        "verify": False,
     }
 
     async with client:
@@ -252,14 +242,16 @@ async def test_program(client):
 
         print("### abap_package_create ###")
         package_create_parameters = dict(mock_connection_parameters)
-        package_create_parameters.update({
-            'name': 'ZTEST_MCP_PKG',
-            'description': 'Test package for MCP program test',
-            'software_component': 'LOCAL',
-        })
+        package_create_parameters.update(
+            {
+                "name": "ZTEST_MCP_PKG",
+                "description": "Test package for MCP program test",
+                "software_component": "LOCAL",
+            }
+        )
 
         result = await client.call_tool(
-            'abap_package_create',
+            "abap_package_create",
             package_create_parameters,
         )
 
@@ -267,14 +259,16 @@ async def test_program(client):
 
         print("### abap_program_create ###")
         program_create_parameters = dict(mock_connection_parameters)
-        program_create_parameters.update({
-            'name': 'ZTEST_MCP_PROG',
-            'description': 'Test program created via MCP',
-            'package': 'ZTEST_MCP_PKG',
-        })
+        program_create_parameters.update(
+            {
+                "name": "ZTEST_MCP_PROG",
+                "description": "Test program created via MCP",
+                "package": "ZTEST_MCP_PKG",
+            }
+        )
 
         result = await client.call_tool(
-            'abap_program_create',
+            "abap_program_create",
             program_create_parameters,
         )
 
@@ -282,17 +276,15 @@ async def test_program(client):
 
         print("### abap_program_write ###")
         program_write_parameters = dict(mock_connection_parameters)
-        program_write_parameters.update({
-            'name': 'ZTEST_MCP_PROG',
-            'source_data': (
-                'REPORT ztest_mcp_prog.\n'
-                '\n'
-                'WRITE: / \'Hello from MCP\'.\n'
-            ),
-        })
+        program_write_parameters.update(
+            {
+                "name": "ZTEST_MCP_PROG",
+                "source_data": ("REPORT ztest_mcp_prog.\n\nWRITE: / 'Hello from MCP'.\n"),
+            }
+        )
 
         result = await client.call_tool(
-            'abap_program_write',
+            "abap_program_write",
             program_write_parameters,
         )
 
@@ -300,12 +292,14 @@ async def test_program(client):
 
         print("### abap_program_read ###")
         program_read_parameters = dict(mock_connection_parameters)
-        program_read_parameters.update({
-            'name': 'ZTEST_MCP_PROG',
-        })
+        program_read_parameters.update(
+            {
+                "name": "ZTEST_MCP_PROG",
+            }
+        )
 
         result = await client.call_tool(
-            'abap_program_read',
+            "abap_program_read",
             program_read_parameters,
         )
 
@@ -313,12 +307,14 @@ async def test_program(client):
 
         print("### abap_program_activate ###")
         program_activate_parameters = dict(mock_connection_parameters)
-        program_activate_parameters.update({
-            'name': ['ZTEST_MCP_PROG'],
-        })
+        program_activate_parameters.update(
+            {
+                "name": ["ZTEST_MCP_PROG"],
+            }
+        )
 
         result = await client.call_tool(
-            'abap_program_activate',
+            "abap_program_activate",
             program_activate_parameters,
         )
 
