@@ -11,6 +11,8 @@ Python >= 3.12
 
 ## Installation
 
+First clone sapcli's repository because it is not yet published as PyPI package:
+
 ```bash
 git clone https://github.com/jfilak/mcp-sapcli
 cd mcp-sapcli
